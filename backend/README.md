@@ -47,13 +47,13 @@ Antes de empezar necesitas tener instalado:
 ### Paso 1 — Clonar el repositorio
 
 ```bash
-git clone https://github.com/USUARIO/REPOSITORIO.git
+git clone https://github.com/amamaster/teca-backend.git
 ```
 
 Luego entra a la carpeta del backend:
 
 ```bash
-cd REPOSITORIO/backend
+cd teca-backend/backend
 ```
 
 ### Paso 2 — Levantar MongoDB en Docker
