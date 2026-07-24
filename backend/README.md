@@ -33,7 +33,7 @@ Antes de empezar necesitas tener instalado:
 | Herramienta | Versión | Cómo verificar |
 |---|---|---|
 | **Python** | 3.11 o superior | `python --version` |
-| **Docker Desktop** | cualquiera reciente | `docker --version` |
+| **Docker Desktop** | cualquiera reciente | `docker compose version` |
 | **Git** | cualquiera | `git --version` |
 
 > Si `python --version` te muestra 3.10 o menos, descarga la última versión desde
@@ -58,29 +58,50 @@ cd teca-backend/backend
 
 ### Paso 2 — Levantar MongoDB en Docker
 
-La base de datos corre en un contenedor, así no tienes que instalar MongoDB en tu máquina:
+La base de datos corre en un contenedor, así no tienes que instalar MongoDB en tu máquina.
+Asegúrate de que **Docker Desktop esté abierto** y ejecuta, desde la **raíz del repositorio**
+(la carpeta que contiene `docker-compose.yml`, no dentro de `backend/`):
 
 ```bash
-docker run -d --name teca-mongo -p 27017:27017 -v teca-mongo-data:/data/db mongo:7
+docker compose up -d
 ```
 
-Qué hace cada parte:
-- `-d` → lo deja corriendo en segundo plano.
-- `--name teca-mongo` → le pone nombre para poder referirte a él después.
-- `-p 27017:27017` → expone el puerto de Mongo a tu máquina.
-- `-v teca-mongo-data:/data/db` → **guarda los datos aunque borres el contenedor**.
+Eso es todo. El archivo [`docker-compose.yml`](../docker-compose.yml) ya trae la
+configuración, así que no tienes que recordar ningún parámetro.
 
-Verifica que quedó corriendo:
+Levanta dos contenedores:
+
+| Contenedor | Puerto | Para qué sirve |
+|---|---|---|
+| `teca-mongo` | 27017 | La base de datos que usa el backend |
+| `teca-mongo-express` | 8081 | Interfaz web para **ver los datos** en el navegador |
+
+Verifica que quedaron corriendo:
 
 ```bash
-docker ps
+docker compose ps
 ```
 
-Debes ver `teca-mongo` en la lista. Si apagas la computadora, vuelve a arrancarlo con:
+Debes ver `teca-mongo` con el estado **`Up (healthy)`**. La palabra *healthy* significa que
+Mongo ya terminó de arrancar y acepta conexiones.
 
-```bash
-docker start teca-mongo
-```
+> 💡 **Truco útil:** abre **http://localhost:8081** en el navegador para ver las colecciones
+> y los documentos guardados sin instalar ningún programa. Es muy práctico para entender qué
+> está grabando el backend mientras desarrollas el frontend.
+
+#### Comandos del día a día
+
+| Qué quieres hacer | Comando |
+|---|---|
+| Encender la base de datos | `docker compose up -d` |
+| Apagarla (los datos **se conservan**) | `docker compose down` |
+| Ver si está corriendo | `docker compose ps` |
+| Ver los mensajes de Mongo | `docker compose logs mongo` |
+| Borrar **todos** los datos y empezar de cero | `docker compose down -v` |
+
+> Los datos se guardan en un volumen de Docker llamado `teca-mongo-data`, así que sobreviven
+> aunque apagues la computadora o borres los contenedores. Solo `docker compose down -v`
+> (con la `-v`) los elimina de verdad.
 
 ### Paso 3 — Crear el entorno virtual de Python
 
@@ -675,8 +696,12 @@ No activaste el entorno virtual. Ejecuta `.venv\Scripts\activate` (Windows) o
 <details>
 <summary><b>«ServerSelectionTimeoutError» al arrancar</b></summary>
 
-El backend no encuentra MongoDB. Revisa que el contenedor esté corriendo con `docker ps`.
-Si no aparece, arráncalo con `docker start teca-mongo`.
+El backend no encuentra MongoDB. Revisa que el contenedor esté corriendo con
+`docker compose ps`. Si no aparece o no dice *healthy*, levántalo desde la raíz del
+repositorio con `docker compose up -d`.
+
+Si Docker Desktop no está abierto, ábrelo primero y espera a que el ícono de la ballena
+deje de animarse.
 </details>
 
 <details>
@@ -702,9 +727,21 @@ Ya tienes otro servidor en ese puerto. Usa uno distinto con
 <details>
 <summary><b>Quiero borrar todos los datos y empezar de cero</b></summary>
 
+Desde la raíz del repositorio:
+
 ```bash
-docker rm -f teca-mongo
-docker volume rm teca-mongo-data
+docker compose down -v
+docker compose up -d
 ```
-Luego repite el Paso 2 y ejecuta `python seed.py` otra vez.
+
+La `-v` elimina el volumen con los datos. Después vuelve a ejecutar `python seed.py`
+para recargar los productos de ejemplo.
+</details>
+
+<details>
+<summary><b>«docker: command not found» o «cannot connect to the Docker daemon»</b></summary>
+
+Docker Desktop no está instalado o no está abierto. Instálalo desde
+[docker.com](https://www.docker.com/products/docker-desktop/), ábrelo y espera a que
+termine de iniciar antes de ejecutar `docker compose up -d`.
 </details>

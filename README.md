@@ -6,9 +6,10 @@ administración.
 
 ## Estructura del repositorio
 
-| Carpeta | Tecnología | Descripción |
+| Archivo / carpeta | Tecnología | Descripción |
 |---|---|---|
 | [`backend/`](backend/) | Python · FastAPI · MongoDB | API REST que consume el frontend |
+| [`docker-compose.yml`](docker-compose.yml) | Docker | Levanta MongoDB y su visor web |
 | *(frontend)* | React · Next.js | Interfaz de la tienda *(en desarrollo)* |
 
 ## Empezar
@@ -28,8 +29,15 @@ Ahí encontrarás:
 
 ## Arranque rápido
 
+Con **Docker Desktop abierto**, desde la raíz del repositorio:
+
 ```bash
-docker run -d --name teca-mongo -p 27017:27017 -v teca-mongo-data:/data/db mongo:7
+docker compose up -d
+```
+
+Eso levanta MongoDB. Luego, el backend:
+
+```bash
 cd backend
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
@@ -38,10 +46,17 @@ python seed.py
 uvicorn app.main:app --reload
 ```
 
-Abre **http://localhost:8000/docs** para ver la documentación interactiva de la API,
-donde puedes probar cada endpoint desde el navegador.
+### Direcciones
+
+| Servicio | URL | Para qué sirve |
+|---|---|---|
+| **Documentación de la API** | http://localhost:8000/docs | Probar los endpoints desde el navegador |
+| **API** | http://localhost:8000 | Lo que consume el frontend |
+| **Visor de la base de datos** | http://localhost:8081 | Ver las colecciones y los documentos |
 
 | Dato de prueba | Valor |
 |---|---|
 | Administrador | `admin@teca.com` / `Admin1234!` |
 | Cupón de descuento | `TECA10` (10 %) |
+
+Para apagar la base de datos conservando los datos: `docker compose down`
