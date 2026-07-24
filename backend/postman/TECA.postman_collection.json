@@ -1,0 +1,1918 @@
+{
+  "info": {
+    "name": "TECA API",
+    "description": "Colección para probar el backend del e-commerce TECA.\n\nCÓMO EMPEZAR:\n1. Asegúrate de que el backend esté corriendo (uvicorn app.main:app --reload).\n2. Ejecuta «Iniciar sesión y obtener el token JWT» en la carpeta Autenticación. El token se guarda solo.\n3. Ejecuta «Listar productos del catálogo». Eso guarda el id del primer producto, que usan las peticiones del carrito y del checkout.\n4. Ya puedes ejecutar cualquier otra petición.\n\nLos parámetros de filtro vienen desactivados: actívalos con la casilla de la pestaña Params cuando quieras usarlos.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Autenticación",
+      "description": "Registro de clientes, verificación de correo, inicio de sesión (JWT), recuperación y cambio de contraseña, y perfil propio.\n\nCómo autenticarse: llama a POST /auth/login, copia el access_token y pulsa el botón Authorize de esta página para enviarlo como Authorization: Bearer <token> en el resto de peticiones.",
+      "item": [
+        {
+          "name": "Registrar un cliente nuevo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Crea una cuenta de cliente con rol cliente y correo sin verificar.\n\nGenera un token de verificación que en producción se enviaría por correo; con DEV_MODE=true se devuelve en la respuesta (verification_token) para poder probar el flujo sin servidor de correo.\n\nErrores: 409 si el correo ya está registrado.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"cliente@teca.com\",\n  \"name\": \"Aldair Gallardo\",\n  \"password\": \"MiClave123\",\n  \"phone\": \"6000-0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verificar el correo electrónico",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify-email/:token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "verify-email",
+                ":token"
+              ],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": "",
+                  "description": "Token de verificación recibido al registrarse"
+                }
+              ]
+            },
+            "description": "Marca la cuenta como verificada usando el token recibido en el registro. Corresponde a la pantalla *«Verifica tu correo para continuar»*.\n\nErrores: 400 si el token es inválido o ya fue usado.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Iniciar sesión y obtener el token JWT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Valida correo y contraseña y devuelve:\n\n- access_token: JWT para el header Authorization: Bearer <token>.\n- must_change_password: true cuando es un usuario interno con contraseña temporal, para que el frontend lo obligue a cambiarla en el primer ingreso.\n- user: datos básicos (id, nombre, correo, rol, correo verificado).\n\nSirve tanto para clientes como para usuarios internos del panel; el rol viene dentro del token y en user.role.\n\nErrores: 401 credenciales incorrectas · 403 cuenta inactiva.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@teca.com\",\n  \"password\": \"Admin1234!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda el token para que el resto de peticiones lo usen solas",
+                  "if (pm.response.code === 200) {",
+                  "    const datos = pm.response.json();",
+                  "    if (datos.access_token) {",
+                  "        pm.collectionVariables.set('token', datos.access_token);",
+                  "        console.log('Token guardado. Rol: ' + datos.user.role);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Solicitar recuperación de contraseña",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Pantalla *«¿Olvidaste tu contraseña?»*. Genera un token de reseteo válido por 1 hora.\n\nPor seguridad responde siempre el mismo mensaje, exista o no el correo, para no revelar qué cuentas están registradas. Con DEV_MODE=true se incluye el reset_token en la respuesta para poder probar el flujo.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"cliente@teca.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Restablecer la contraseña con el token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Define una contraseña nueva (mínimo 8 caracteres) usando el token enviado por correo. El token se invalida tras usarse.\n\nErrores: 400 si el token es inválido o pasó más de 1 hora.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\",\n  \"new_password\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cambiar la contraseña estando autenticado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "Requiere la contraseña actual. También es el endpoint que usa el usuario interno para reemplazar su contraseña temporal (deja must_change_password en false).\n\n🔒 Requiere token. Errores: 400 si la contraseña actual no coincide.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"\",\n  \"new_password\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ver mi perfil",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Datos del usuario dueño del token (pantalla *Mi cuenta*). Nunca incluye el hash de la contraseña.\n\n🔒 Requiere token."
+          },
+          "response": []
+        },
+        {
+          "name": "Editar mi perfil",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Actualiza nombre y/o teléfono. Los campos omitidos o nulos se dejan intactos (actualización parcial).\n\n🔒 Requiere token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Aldair Gallardo\",\n  \"phone\": \"6000-0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Catálogo",
+      "description": "Endpoints públicos de la tienda: listado de productos con filtros (categoría, material, rango de precio), búsqueda por texto, ordenamiento y paginación; detalle del producto y reseñas.",
+      "item": [
+        {
+          "name": "Listar productos del catálogo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products?search=&category=&material=&min_price=&max_price=&sort=relevance&page=1&page_size=8",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Búsqueda por texto en nombre y descripción",
+                  "disabled": true
+                },
+                {
+                  "key": "category",
+                  "value": "",
+                  "description": "Categorías separadas por coma: sofa, silla, mesa, cama, lampara, espejo",
+                  "disabled": true
+                },
+                {
+                  "key": "material",
+                  "value": "",
+                  "description": "Materiales separados por coma: madera, tela, metal, vidrio",
+                  "disabled": true
+                },
+                {
+                  "key": "min_price",
+                  "value": "",
+                  "description": "Precio mínimo en balboas (B/.)",
+                  "disabled": true
+                },
+                {
+                  "key": "max_price",
+                  "value": "",
+                  "description": "Precio máximo en balboas (B/.)",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "relevance",
+                  "description": "Orden: price_asc (menor a mayor), price_desc (mayor a menor), newest (más nuevos), relevance (más relevantes)",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número de página, empezando en 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "8",
+                  "description": "Productos por página (máx. 50)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Alimenta la pantalla Catálogo de productos con todos sus filtros de la barra lateral. Solo devuelve productos activos.\n\nFiltros disponibles\n- search: búsqueda de texto en nombre y descripción (la lupa del header).\n- category y material: aceptan varios valores separados por coma (?category=sofa,silla), tal como los checkboxes del filtro lateral.\n- min_price / max_price: el deslizador de precio.\n\nOrdenamiento (sort), igual que el desplegable *Ordenar por*:\n| Valor | Significado |\n|---|---|\n| price_asc | Precio de menor a mayor |\n| price_desc | Precio de mayor a menor |\n| newest | Más nuevos |\n| relevance | Más relevantes (mejor calificados) — por defecto |\n\nRespuesta: items, total, page, page_size y total_pages, para pintar el texto *«Mostrando 1-8 de 24 productos»* y la paginación.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda el id del primer producto para las peticiones que lo necesiten",
+                  "if (pm.response.code === 200) {",
+                  "    const datos = pm.response.json();",
+                  "    if (datos.items && datos.items.length > 0) {",
+                  "        pm.collectionVariables.set('productId', datos.items[0].id);",
+                  "        console.log('productId guardado: ' + datos.items[0].name);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle de un producto",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/:product_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                ":product_id"
+              ],
+              "variable": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}",
+                  "description": "ID del producto devuelto por el catálogo"
+                }
+              ]
+            },
+            "description": "Datos completos para la ficha del producto: precio, descripción, material, color, stock, galería de imágenes (images) y las viñetas de *Detalles del producto* (dimensions, structure, warranty), además de rating_avg y rating_count.\n\nEl campo stock es el que limita el selector de cantidad (*«No puedes seleccionar más de N unidades»*).\n\nErrores: 404 si no existe o está inactivo.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reseñas de un producto",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/:product_id/reviews?page=1&page_size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                ":product_id",
+                "reviews"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número de página, empezando en 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "10",
+                  "description": "Reseñas por página (máx. 50)",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}",
+                  "description": "ID del producto"
+                }
+              ]
+            },
+            "description": "Bloque Reseñas del producto. Devuelve:\n\n- items: reseñas paginadas (más recientes primero), cada una con nombre del autor, comentario, fecha y verified_purchase para la etiqueta *Compra verificada*.\n- average: promedio general (el número grande, ej. 4.2).\n- distribution: cantidad de reseñas por estrella ({\"5\": 22, \"4\": 10, ...}) para dibujar las barras 5★–1★.\n- total: total de reseñas (*«Ver todas las reseñas (11)»*).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Escribir una reseña",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/:product_id/reviews",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                ":product_id",
+                "reviews"
+              ],
+              "variable": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}",
+                  "description": "ID del producto a reseñar"
+                }
+              ]
+            },
+            "description": "Botón *Escribir mi reseña*. Recibe rating (1 a 5) y comment (máx. 500 caracteres).\n\nLa etiqueta Compra verificada se calcula sola: se marca verified_purchase en true si el usuario tiene un pedido entregado que incluye ese producto. Tras guardar, recalcula el promedio y el conteo del producto.\n\n🔒 Requiere token. Errores: 404 producto inexistente · 409 si ya reseñaste este producto (una reseña por usuario).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"El sofá llegó en perfecto estado y la entrega fue rápida.\",\n  \"rating\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Carrito",
+      "description": "Carrito persistente del cliente autenticado. Valida stock en cada operación y devuelve siempre el resumen del pedido (subtotal, envío, descuento, total y cuánto falta para el envío gratis).\n\nLos invitados manejan el carrito en el frontend y envían los items directamente a POST /orders/checkout.",
+      "item": [
+        {
+          "name": "Ver mi carrito",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cart",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart"
+              ]
+            },
+            "description": "Pantalla Carrito de compra. Devuelve los items con datos frescos del producto (nombre, precio, material, imagen, stock y subtotal de línea) más el bloque *Resumen del pedido*:\n\n| Campo | Uso en la pantalla |\n|---|---|\n| subtotal | Suma de las líneas |\n| shipping | Envío (gratis al superar el umbral configurado) |\n| missing_for_free_shipping | *«Te faltan B/. XX.XX para envío gratis»* |\n| discount / coupon_code | Línea de descuento del cupón aplicado |\n| total | Total a pagar |\n\nSi el carrito no existe todavía, se crea vacío.\n\n🔒 Requiere token."
+          },
+          "response": []
+        },
+        {
+          "name": "Agregar un producto al carrito",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cart/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart",
+                "items"
+              ]
+            },
+            "description": "Botón *Agregar al carrito*. Si el producto ya estaba en el carrito, suma la cantidad en lugar de duplicar la línea.\n\nValida el stock contra la cantidad resultante y devuelve el carrito completo ya recalculado, para que el frontend refresque el resumen con una sola llamada.\n\n🔒 Requiere token. Errores: 404 producto inexistente · 409 si se supera el stock disponible.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{productId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cambiar la cantidad de un producto",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cart/items/:product_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart",
+                "items",
+                ":product_id"
+              ],
+              "variable": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}",
+                  "description": "ID del producto que ya está en el carrito"
+                }
+              ]
+            },
+            "description": "Fija la cantidad exacta de una línea del carrito (selector - 1 +). A diferencia de POST /cart/items, reemplaza la cantidad en vez de sumarla.\n\nDevuelve el carrito recalculado.\n\n🔒 Requiere token. Errores: 404 si el producto no existe o no está en el carrito · 409 si la cantidad supera el stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{productId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Quitar un producto del carrito",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cart/items/:product_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart",
+                "items",
+                ":product_id"
+              ],
+              "variable": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}",
+                  "description": "ID del producto a quitar del carrito"
+                }
+              ]
+            },
+            "description": "Icono de papelera de la fila. Elimina la línea completa sin importar la cantidad y devuelve el carrito recalculado. Es idempotente: si el producto ya no estaba, responde igual sin error.\n\n🔒 Requiere token."
+          },
+          "response": []
+        },
+        {
+          "name": "Aplicar un cupón de descuento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cart/coupon",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart",
+                "coupon"
+              ]
+            },
+            "description": "Aplica un código de descuento al carrito (ej. TECA10 = 10 %). El código no distingue mayúsculas.\n\nSolo se admite un cupón a la vez: si ya había uno aplicado, este lo reemplaza (el aviso *«Si aplicas otro, el cupón actual será reemplazado»*).\n\nDevuelve el carrito con la línea discount y el total actualizados.\n\n🔒 Requiere token. Errores: 404 si el cupón no existe o está inactivo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"TECA10\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Quitar el cupón aplicado",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cart/coupon",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart",
+                "coupon"
+              ]
+            },
+            "description": "Botón *Eliminar* del recuadro «Código de cupón aplicado». Deja el descuento en 0 y devuelve el carrito recalculado.\n\n🔒 Requiere token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pedidos",
+      "description": "Checkout (con o sin cuenta), historial de pedidos y seguimiento del estado con línea de tiempo y número de guía.",
+      "item": [
+        {
+          "name": "Crear un pedido (checkout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                "checkout"
+              ]
+            },
+            "description": "Cierra la compra y genera el pedido. Es el paso *Pago → Confirmación* del checkout.\n\nFunciona con y sin cuenta. El token es opcional: si se envía, el pedido queda asociado al usuario y se le vacía el carrito; si no, se registra como pedido de invitado (por eso email es obligatorio siempre — es el correo con el que luego podrá consultar su pedido).\n\nQué hace, en orden:\n1. Valida que cada producto exista, esté activo y tenga stock suficiente.\n2. Recalcula precios en el servidor (nunca confía en los totales del frontend) y aplica el cupón si se envió.\n3. Genera el número correlativo del pedido (TEC-2026-001) con un contador atómico por año.\n4. Descuenta el stock de cada producto.\n5. Deja el pedido en estado confirmado con su primer registro en la línea de tiempo.\n\nMétodos de pago (payment_method): card, paypal, bitcoin, yappy. El cobro está simulado: el pedido nace con payment_status: pagado; aquí se integraría la pasarela real.\n\nErrores: 404 producto inexistente · 409 stock insuficiente · 400 cupón inválido.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"coupon_code\": \"TECA10\",\n  \"email\": \"cliente@teca.com\",\n  \"items\": [\n    {\n      \"product_id\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"payment_method\": \"yappy\",\n  \"shipping_address\": {\n    \"address_line\": \"Ave. Álvarez, casa 12\",\n    \"city\": \"David\",\n    \"full_name\": \"Aldair Gallardo\",\n    \"phone\": \"6000-0000\",\n    \"province\": \"Chiriquí\",\n    \"reference\": \"Frente al parque\"\n  },\n  \"shipping_method\": \"envío estándar\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda el número de pedido para usarlo en las siguientes peticiones",
+                  "if (pm.response.code === 201) {",
+                  "    const pedido = pm.response.json();",
+                  "    pm.collectionVariables.set('orderNumber', pedido.order_number);",
+                  "    console.log('Pedido creado: ' + pedido.order_number);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mis pedidos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/mine",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                "mine"
+              ]
+            },
+            "description": "Pantalla Mis pedidos del área de cliente. Devuelve todos los pedidos del usuario autenticado, del más reciente al más antiguo.\n\nUn arreglo vacío es la señal para mostrar el estado *«Todavía no tienes pedidos»*.\n\n🔒 Requiere token."
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar un pedido sin cuenta (invitado)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/lookup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                "lookup"
+              ]
+            },
+            "description": "Permite a quien compró como invitado rastrear su pedido: *«Puedes consultar el estado de tu pedido usando el número de pedido y tu correo electrónico»*.\n\nExige ambos datos (order_number + email) y deben coincidir, de modo que un número de pedido adivinado no basta para ver los datos de otra persona.\n\nNo requiere token. Errores: 404 si la combinación no coincide.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"cliente@teca.com\",\n  \"order_number\": \"TEC-2026-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Detalle y seguimiento de un pedido",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/:order_number",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                ":order_number"
+              ],
+              "variable": [
+                {
+                  "key": "order_number",
+                  "value": "{{orderNumber}}",
+                  "description": "Número del pedido. Ej. «TEC-2026-001»"
+                }
+              ]
+            },
+            "description": "Pantalla Pedido TEC-2026-001: información de envío, productos, resumen de totales y tracking_number (número de guía del courier).\n\nEl campo status_history trae cada estado con su fecha y hora, que es lo que dibuja la línea de tiempo *Pedido confirmado → En preparación → En camino → Entregado*.\n\nVisibilidad: un cliente solo puede ver sus propios pedidos; los roles internos pueden consultar cualquiera.\n\n🔒 Requiere token. Errores: 404 si no existe o no te pertenece."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Mi cuenta",
+      "description": "Datos guardados del cliente: direcciones de envío, métodos de pago (solo etiquetas, nunca números completos de tarjeta) y solicitudes de devolución.",
+      "item": [
+        {
+          "name": "Listar mis direcciones",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "addresses"
+              ]
+            },
+            "description": "Pantalla Direcciones. Devuelve la libreta de direcciones del usuario; la que tenga is_default: true es la que el checkout debe preseleccionar.\n\n🔒 Requiere token."
+          },
+          "response": []
+        },
+        {
+          "name": "Agregar una dirección",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "addresses"
+              ]
+            },
+            "description": "Guarda una dirección de envío (nombre, teléfono, provincia, ciudad, dirección y referencia opcional).\n\nSi se envía is_default: true, el resto de direcciones dejan de ser la predeterminada automáticamente.\n\n🔒 Requiere token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address_line\": \"Ave. Álvarez, casa 12\",\n  \"city\": \"David\",\n  \"full_name\": \"Aldair Gallardo\",\n  \"is_default\": true,\n  \"phone\": \"6000-0000\",\n  \"province\": \"Chiriquí\",\n  \"reference\": \"Frente al parque\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Editar una dirección",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/addresses/:address_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "addresses",
+                ":address_id"
+              ],
+              "variable": [
+                {
+                  "key": "address_id",
+                  "value": "",
+                  "description": "ID de la dirección a editar"
+                }
+              ]
+            },
+            "description": "Reemplaza todos los campos de la dirección (envía el objeto completo). Marcarla como predeterminada desmarca las demás.\n\nSolo puedes editar direcciones propias.\n\n🔒 Requiere token. Errores: 404 si no existe o no te pertenece.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address_line\": \"Ave. Álvarez, casa 12\",\n  \"city\": \"David\",\n  \"full_name\": \"Aldair Gallardo\",\n  \"is_default\": true,\n  \"phone\": \"6000-0000\",\n  \"province\": \"Chiriquí\",\n  \"reference\": \"Frente al parque\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar una dirección",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/addresses/:address_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "addresses",
+                ":address_id"
+              ],
+              "variable": [
+                {
+                  "key": "address_id",
+                  "value": "",
+                  "description": "ID de la dirección a eliminar"
+                }
+              ]
+            },
+            "description": "Borra la dirección de la libreta. Responde 204 sin cuerpo. Los pedidos ya realizados conservan su dirección: guardan una copia, no una referencia.\n\n🔒 Requiere token. Errores: 404 si no existe o no te pertenece."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar mis métodos de pago",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/payment-methods",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "payment-methods"
+              ]
+            },
+            "description": "Pantalla Métodos de pago. Devuelve las tarjetas y cuentas guardadas con su etiqueta (*«Visa terminada en 4821»*), vencimiento, titular y cuál es la Principal (is_default).\n\n🔒 Requiere token."
+          },
+          "response": []
+        },
+        {
+          "name": "Agregar un método de pago",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/payment-methods",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "payment-methods"
+              ]
+            },
+            "description": "Guarda un método de pago (visa, mastercard o paypal).\n\n⚠️ Por diseño solo se almacenan datos no sensibles: la etiqueta con los últimos 4 dígitos, el titular y el vencimiento. Nunca el número completo de tarjeta ni el CVV — eso corresponde al proveedor de pagos (tokenización).\n\nMarcarlo como principal desmarca los demás.\n\n🔒 Requiere token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expires\": \"08/2028\",\n  \"holder_name\": \"Aldair Gallardo\",\n  \"is_default\": true,\n  \"label\": \"Visa terminada en 4821\",\n  \"type\": \"visa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Editar un método de pago",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/payment-methods/:method_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "payment-methods",
+                ":method_id"
+              ],
+              "variable": [
+                {
+                  "key": "method_id",
+                  "value": "",
+                  "description": "ID del método de pago a editar"
+                }
+              ]
+            },
+            "description": "Botón *Editar*. Reemplaza los datos del método (por ejemplo, actualizar el vencimiento o marcarlo como principal).\n\n🔒 Requiere token. Errores: 404 si no existe o no te pertenece.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expires\": \"08/2028\",\n  \"holder_name\": \"Aldair Gallardo\",\n  \"is_default\": true,\n  \"label\": \"Visa terminada en 4821\",\n  \"type\": \"visa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar un método de pago",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/payment-methods/:method_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "payment-methods",
+                ":method_id"
+              ],
+              "variable": [
+                {
+                  "key": "method_id",
+                  "value": "",
+                  "description": "ID del método de pago a eliminar"
+                }
+              ]
+            },
+            "description": "Botón *Eliminar*. Responde 204 sin cuerpo.\n\n🔒 Requiere token. Errores: 404 si no existe o no te pertenece."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar mis devoluciones",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/returns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "returns"
+              ]
+            },
+            "description": "Pantalla Mis devoluciones: *«Consulta el estado de tus solicitudes de devolución o cambio»*. Ordenadas de la más reciente a la más antigua.\n\nCada solicitud trae su número (DEV-2026-0001), el producto, el motivo, la fecha y el status, que es la etiqueta de color de la tarjeta:\n\n| Estado | Etiqueta |\n|---|---|\n| en_revision | En revisión |\n| aprobado | Aprobado |\n| rechazado | Rechazado |\n| completado | Completado |\n\n🔒 Requiere token."
+          },
+          "response": []
+        },
+        {
+          "name": "Solicitar una devolución",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account/returns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account",
+                "returns"
+              ]
+            },
+            "description": "Crea una solicitud de devolución o cambio para un producto de un pedido propio, indicando el motivo (ej. *«Producto dañado»*).\n\nValida que el pedido sea tuyo y que el producto realmente pertenezca a ese pedido. Nace en estado en_revision; el equipo la resuelve desde el panel.\n\n🔒 Requiere token. Errores: 404 pedido inexistente o ajeno · 400 si el producto no pertenece a ese pedido.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_number\": \"TEC-2026-001\",\n  \"product_id\": \"{{productId}}\",\n  \"reason\": \"El producto llegó dañado en una esquina.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Administración",
+      "description": "Panel interno. Cada endpoint exige uno de los roles internos: admin, vendedor, encargado, soporte, editor, finanzas. Las acciones administrativas quedan registradas en la auditoría.",
+      "item": [
+        {
+          "name": "Listar usuarios internos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users?role=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "role",
+                  "value": "",
+                  "description": "Filtrar por rol: admin, vendedor, encargado, soporte, editor o finanzas",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Tabla de la pantalla Usuarios (*«Gestiona los usuarios internos de la plataforma»*): nombre, correo, rol y estado activo/inactivo.\n\nSolo devuelve cuentas con rol interno — los clientes de la tienda no aparecen aquí.\n\nEl parámetro role implementa el *Filtrado por Rol* (?role=vendedor).\n\n🔒 Rol requerido: admin."
+          },
+          "response": []
+        },
+        {
+          "name": "Crear un usuario interno",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ]
+            },
+            "description": "Formulario Nuevo Usuario Interno: datos personales, rol asignado y contraseña temporal.\n\n- must_change_password: corresponde al switch *«El usuario deberá cambiarla en su primer ingreso»*. El login devuelve esta bandera para que el frontend fuerce el cambio.\n- active: switch *«Usuario activo — puede iniciar sesión inmediatamente»*.\n- El correo se marca como verificado (lo crea un administrador, no requiere confirmación).\n\nQueda registrado en la auditoría.\n\n🔒 Rol requerido: admin. Errores: 409 si el correo ya existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": true,\n  \"description\": \"Encargado de inventario\",\n  \"email\": \"usuarioa@teca.com\",\n  \"must_change_password\": true,\n  \"name\": \"Usuario A\",\n  \"phone\": \"6000-0000\",\n  \"role\": \"encargado\",\n  \"temp_password\": \"Temporal123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Editar un usuario interno",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:user_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":user_id"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "",
+                  "description": "ID del usuario interno a editar"
+                }
+              ]
+            },
+            "description": "Modal Editar Usuario (nombre, correo, rol, estado). Es una actualización parcial: solo se modifican los campos enviados.\n\nTambién es el endpoint del switch Activo/Inactivo de la tabla — basta con enviar {\"active\": false}. Un usuario inactivo no puede iniciar sesión y sus tokens dejan de funcionar.\n\nQueda registrado en la auditoría.\n\n🔒 Rol requerido: admin. Errores: 404 si no existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": false,\n  \"role\": \"soporte\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar un usuario interno",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:user_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":user_id"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "",
+                  "description": "ID del usuario interno a eliminar"
+                }
+              ]
+            },
+            "description": "Icono de papelera de la tabla de usuarios. Responde 204 sin cuerpo.\n\nProtección: no puedes eliminar tu propia cuenta (evita que un admin se quede fuera del sistema). Para retirar el acceso sin borrar el historial, conviene desactivar en vez de eliminar.\n\nQueda registrado en la auditoría.\n\n🔒 Rol requerido: admin. Errores: 400 si intentas eliminarte a ti mismo · 404 si no existe."
+          },
+          "response": []
+        },
+        {
+          "name": "Matriz de roles y permisos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "roles"
+              ]
+            },
+            "description": "Pantalla Permisos / Roles. Devuelve cada rol interno con la lista de módulos que puede usar, para pintar la matriz de permisos y los chips de rol de los formularios.\n\nEl sufijo :lectura indica acceso de solo lectura (ej. pedidos:lectura).\n\n🔒 Requiere cualquier rol interno."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar productos (panel)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products?search=&category=&low_stock=False&page=1&page_size=6",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Buscar por nombre del producto",
+                  "disabled": true
+                },
+                {
+                  "key": "category",
+                  "value": "",
+                  "description": "Categoría: sofa, silla, mesa, cama, lampara o espejo",
+                  "disabled": true
+                },
+                {
+                  "key": "low_stock",
+                  "value": "False",
+                  "description": "Solo productos con stock bajo (< 5)",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número de página, empezando en 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "6",
+                  "description": "Productos por página (máx. 50)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Tabla de la pantalla Productos del panel: nombre, categoría, precio y stock, con el pie *«Mostrando 6 de 12 productos»* y paginación.\n\nA diferencia del catálogo público, incluye los productos inactivos.\n\nFiltros: search (buscador por nombre), category y low_stock=true para ver solo lo que está por agotarse (stock < 5, la etiqueta *Bajo*).\n\n🔒 Requiere cualquier rol interno."
+          },
+          "response": []
+        },
+        {
+          "name": "Crear un producto",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ]
+            },
+            "description": "Botón + Nuevo de la pantalla Productos.\n\nCampos obligatorios: name, price (mayor que 0), category y material. Opcionales: descripción, color, stock, images (URLs de la galería) y las viñetas de la ficha (dimensions, structure, warranty).\n\nNace con calificación en 0 y, si active es true, aparece de inmediato en el catálogo público. Queda registrado en la auditoría.\n\n🔒 Roles: admin, editor, encargado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": true,\n  \"category\": \"sofa\",\n  \"color\": \"Gris\",\n  \"description\": \"Sofá de tres puestos, tapizado en tela resistente.\",\n  \"dimensions\": \"200 cm x 85 cm\",\n  \"images\": [],\n  \"material\": \"tela\",\n  \"name\": \"Sofá moderno de sala\",\n  \"price\": 299.99,\n  \"stock\": 7,\n  \"structure\": \"Madera\",\n  \"warranty\": \"6 meses\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Editar un producto",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/:product_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                ":product_id"
+              ],
+              "variable": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}",
+                  "description": "ID del producto a editar"
+                }
+              ]
+            },
+            "description": "Icono de lápiz de la tabla. Actualización parcial: envía solo los campos que cambian.\n\nEs también la vía para reponer inventario ({\"stock\": 20}) o para ocultar un producto del catálogo sin borrarlo ({\"active\": false}).\n\nQueda registrado en la auditoría.\n\n🔒 Roles: admin, editor, encargado. Errores: 404 si no existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 279.99,\n  \"stock\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar un producto",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/:product_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                ":product_id"
+              ],
+              "variable": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}",
+                  "description": "ID del producto a eliminar"
+                }
+              ]
+            },
+            "description": "Modal *«¿Eliminar este producto? Esta opción no se puede deshacer»*. Responde 204 sin cuerpo.\n\nBorra el producto del catálogo de forma permanente. Los pedidos anteriores no se ven afectados: guardan una copia de los datos del producto. Si solo quieres retirarlo de la tienda, usa PATCH con active: false.\n\nQueda registrado en la auditoría.\n\n🔒 Roles: admin, editor, encargado. Errores: 404 si no existe."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar todos los pedidos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/orders?status=&page=1&page_size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filtrar por estado: confirmado, en_preparacion, en_camino, entregado o cancelado",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número de página, empezando en 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "10",
+                  "description": "Pedidos por página (máx. 50)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Bandeja de pedidos del panel: todos los pedidos de la tienda (de clientes y de invitados), del más reciente al más antiguo, con paginación.\n\nFiltra por estado con ?status=confirmado (confirmado, en_preparacion, en_camino, entregado, cancelado).\n\n🔒 Roles: admin, vendedor, encargado, soporte."
+          },
+          "response": []
+        },
+        {
+          "name": "Cambiar el estado de un pedido",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/orders/:order_number/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "orders",
+                ":order_number",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "order_number",
+                  "value": "{{orderNumber}}",
+                  "description": "Número del pedido. Ej. «TEC-2026-001»"
+                }
+              ]
+            },
+            "description": "Avanza el pedido en su ciclo de vida y agrega una entrada con fecha y hora a status_history, que es lo que alimenta la línea de tiempo que ve el cliente.\n\nFlujo normal: confirmado → en_preparacion → en_camino → entregado (o cancelado en cualquier punto).\n\nAl pasar a en_camino conviene enviar también tracking_number, el número de guía del courier (ej. GLE-88420193PA).\n\nSe identifica el pedido por su número (TEC-2026-001), no por su id. Queda registrado en la auditoría.\n\n🔒 Roles: admin, vendedor, encargado, soporte. Errores: 404 si no existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"en_camino\",\n  \"tracking_number\": \"GLE-88420193PA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Listar todas las devoluciones",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/returns?status=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "returns"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filtrar por estado: en_revision, aprobado, rechazado o completado",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Bandeja de solicitudes de devolución de todos los clientes, de la más reciente a la más antigua.\n\nFiltra con ?status=en_revision para ver únicamente lo pendiente de resolver.\n\n🔒 Roles: admin, vendedor, encargado, soporte."
+          },
+          "response": []
+        },
+        {
+          "name": "Resolver una devolución",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/returns/:return_id/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "returns",
+                ":return_id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "return_id",
+                  "value": "",
+                  "description": "ID de la solicitud de devolución"
+                }
+              ]
+            },
+            "description": "Cambia el estado de una solicitud de devolución. El cliente ve el resultado en *Mis devoluciones*.\n\n| Estado | Significado |\n|---|---|\n| en_revision | Recién solicitada, pendiente de evaluar |\n| aprobado | Se acepta la devolución |\n| rechazado | No procede |\n| completado | Devolución finalizada (producto recibido / reembolso hecho) |\n\nQueda registrado en la auditoría.\n\n🔒 Roles: admin, vendedor, encargado, soporte. Errores: 404 si no existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"aprobado\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Listar cupones",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/coupons",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "coupons"
+              ]
+            },
+            "description": "Todos los códigos de descuento con su porcentaje y si están activos.\n\n🔒 Requiere cualquier rol interno."
+          },
+          "response": []
+        },
+        {
+          "name": "Crear un cupón",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/coupons",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "coupons"
+              ]
+            },
+            "description": "Crea un código de descuento porcentual (ej. TECA10 con discount_percent: 10). El código se guarda en mayúsculas y debe ser único.\n\nLos clientes lo aplican desde el carrito con POST /cart/coupon. Poner active: false lo desactiva sin borrarlo.\n\nQueda registrado en la auditoría.\n\n🔒 Rol requerido: admin. Errores: 409 si el código ya existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": true,\n  \"code\": \"TECA10\",\n  \"discount_percent\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar un cupón",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/coupons/:code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "coupons",
+                ":code"
+              ],
+              "variable": [
+                {
+                  "key": "code",
+                  "value": "",
+                  "description": "Código del cupón. Ej. «TECA10»"
+                }
+              ]
+            },
+            "description": "Borra el cupón por su código. Responde 204 sin cuerpo.\n\nLos pedidos que ya lo usaron conservan el descuento aplicado. Queda registrado en la auditoría.\n\n🔒 Rol requerido: admin. Errores: 404 si no existe."
+          },
+          "response": []
+        },
+        {
+          "name": "Registro de auditoría",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit?page=1&page_size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Número de página, empezando en 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "20",
+                  "description": "Registros por página (máx. 100)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Pantalla Auditoría: historial de acciones administrativas, de la más reciente a la más antigua.\n\nCada entrada guarda quién (actor_name), qué hizo (action: crear, editar, eliminar, actualizar-estado), sobre qué (entity: usuario, producto, pedido, cupón, devolución), un detail legible y la fecha/hora.\n\nEs un registro de solo lectura: se escribe automáticamente y no se puede editar ni borrar desde la API.\n\n🔒 Rol requerido: admin."
+          },
+          "response": []
+        },
+        {
+          "name": "Métricas del panel",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "dashboard"
+              ]
+            },
+            "description": "Tarjetas de la pantalla Panel. Una sola llamada devuelve todos los indicadores:\n\n| Campo | Significado |\n|---|---|\n| total_orders | Pedidos realizados (excluye cancelados) |\n| total_revenue | Ingresos acumulados en B/. |\n| total_products | Productos en el catálogo |\n| low_stock_products | Productos con stock bajo (< 5) — alerta de reposición |\n| total_customers | Clientes registrados |\n| pending_returns | Devoluciones en revisión, pendientes de resolver |\n\n🔒 Requiere cualquier rol interno."
+          },
+          "response": []
+        },
+        {
+          "name": "Resumen financiero",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/finance/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "finance",
+                "summary"
+              ]
+            },
+            "description": "Pantalla Finanzas. Agrega las ventas (excluyendo pedidos cancelados) en dos cortes:\n\n- monthly: por mes (YYYY-MM) con ingresos, cantidad de pedidos, descuentos otorgados y cobros de envío — ideal para la gráfica de evolución.\n- by_payment_method: ingresos y pedidos por método de pago (card, paypal, bitcoin, yappy) — ideal para la gráfica de distribución.\n\nLos montos vienen redondeados a 2 decimales, en balboas.\n\n🔒 Roles: admin, finanzas."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Salud",
+      "description": "Verificación de que el servicio está en línea.",
+      "item": [
+        {
+          "name": "Estado del servicio",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": []
+            },
+            "description": "Devuelve {'status': 'ok'} si la API está en línea. Útil para healthchecks.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "productId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orderNumber",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

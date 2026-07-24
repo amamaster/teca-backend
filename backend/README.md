@@ -17,12 +17,13 @@ administración.
 1. [Requisitos previos](#1-requisitos-previos)
 2. [Instalación paso a paso](#2-instalación-paso-a-paso)
 3. [Documentación interactiva (Swagger)](#3-documentación-interactiva-swagger)
-4. [Cómo funciona la autenticación](#4-cómo-funciona-la-autenticación)
-5. [Cómo conectar el frontend de Next.js](#cómo-conectar-el-frontend-de-nextjs)
-6. [Referencia de endpoints](#6-referencia-de-endpoints)
-7. [Reglas de negocio importantes](#7-reglas-de-negocio-importantes)
-8. [Estructura del proyecto](#8-estructura-del-proyecto)
-9. [Solución de problemas](#9-solución-de-problemas)
+4. [Probar los endpoints con Postman](#3b-probar-los-endpoints-con-postman)
+5. [Cómo funciona la autenticación](#4-cómo-funciona-la-autenticación)
+6. [Cómo conectar el frontend de Next.js](#cómo-conectar-el-frontend-de-nextjs)
+7. [Referencia de endpoints](#6-referencia-de-endpoints)
+8. [Reglas de negocio importantes](#7-reglas-de-negocio-importantes)
+9. [Estructura del proyecto](#8-estructura-del-proyecto)
+10. [Solución de problemas](#9-solución-de-problemas)
 
 ---
 
@@ -232,7 +233,109 @@ python export_openapi.py
 ```
 
 Genera `openapi.json` (no necesita que Mongo esté corriendo). Ese archivo lo puedes
-importar en **Postman**, **Insomnia** o abrirlo en https://editor.swagger.io.
+abrir en https://editor.swagger.io o importarlo en cualquier herramienta.
+
+---
+
+## 3b. Probar los endpoints con Postman
+
+Swagger sirve para explorar la API, pero **Postman** es más cómodo para probar flujos
+completos y guardar tus propias peticiones. En el repositorio hay una colección lista
+para importar.
+
+### Paso 1 — Instalar Postman
+
+Descárgalo gratis desde [postman.com/downloads](https://www.postman.com/downloads/).
+No necesitas crear cuenta: al abrirlo puedes elegir *«Continue without an account»*.
+
+### Paso 2 — Importar la colección
+
+1. En Postman pulsa el botón **Import** (arriba a la izquierda).
+2. Arrastra estos dos archivos de la carpeta `backend/postman/`:
+   - `TECA.postman_collection.json` → las 52 peticiones
+   - `TECA.postman_environment.json` → las variables
+3. Arriba a la derecha, en el selector de entornos, elige **TECA - Local**.
+
+Te aparecerá la colección **TECA API** organizada en carpetas: Autenticación, Catálogo,
+Carrito, Pedidos, Mi cuenta y Administración.
+
+### Paso 3 — Probar el flujo completo
+
+Antes de empezar, asegúrate de que el backend esté corriendo (`uvicorn app.main:app --reload`).
+
+Ejecuta estas peticiones **en orden** y verás la tienda funcionando de punta a punta:
+
+| # | Carpeta | Petición | Qué pasa |
+|---|---|---|---|
+| 1 | Autenticación | *Iniciar sesión y obtener el token JWT* | **Guarda el token automáticamente** |
+| 2 | Catálogo | *Listar productos del catálogo* | Guarda el id del primer producto |
+| 3 | Catálogo | *Detalle de un producto* | Usa ese id sin que copies nada |
+| 4 | Carrito | *Agregar un producto al carrito* | Devuelve el resumen con los totales |
+| 5 | Carrito | *Aplicar un cupón de descuento* | Aplica `TECA10` |
+| 6 | Pedidos | *Crear un pedido (checkout)* | **Guarda el número de pedido** |
+| 7 | Pedidos | *Detalle y seguimiento de un pedido* | Muestra la línea de tiempo |
+| 8 | Administración | *Métricas del panel* | Ingresos, stock bajo, clientes |
+
+> 🎯 **No tienes que copiar y pegar el token ni los ids.** La colección trae scripts que
+> guardan esos valores en variables (`{{token}}`, `{{productId}}`, `{{orderNumber}}`) y las
+> siguientes peticiones los usan solas. Puedes ver los mensajes en la **Console** de Postman
+> (abajo a la izquierda, o `Ctrl+Alt+C`).
+
+### Cómo funcionan las variables
+
+| Variable | Qué guarda | Quién la llena |
+|---|---|---|
+| `{{baseUrl}}` | `http://localhost:8000` | El entorno que importaste |
+| `{{token}}` | El JWT de la sesión | El script del login |
+| `{{productId}}` | Id del primer producto | El script del catálogo |
+| `{{orderNumber}}` | Ej. `TEC-2026-001` | El script del checkout |
+
+Si tu backend corre en otro puerto, cambia `baseUrl` en el entorno y toda la colección
+se ajusta sola.
+
+### Usar los filtros del catálogo
+
+Los parámetros de búsqueda vienen **desactivados** para que la primera prueba sea simple.
+Para usarlos:
+
+1. Abre *Listar productos del catálogo*.
+2. Ve a la pestaña **Params**.
+3. Marca la casilla del filtro que quieras (`category`, `material`, `sort`, `min_price`…)
+   y escribe el valor.
+
+Ejemplo: marca `category` con valor `sofa,silla` y `sort` con `price_asc` para ver solo
+sofás y sillas ordenados de menor a mayor precio.
+
+### Probar como cliente en vez de como administrador
+
+El ejemplo del login trae las credenciales del administrador. Para probar el área del
+cliente:
+
+1. Ejecuta *Registrar un cliente nuevo* (carpeta Autenticación).
+2. Vuelve a *Iniciar sesión*, cambia el cuerpo por el correo y la contraseña que registraste
+   y ejecútala. El token se reemplaza solo.
+3. Ahora las peticiones de **Mi cuenta** y **Carrito** funcionarán con ese cliente.
+
+> Si intentas entrar a **Administración** con un token de cliente, la API responderá
+> **403 «No tienes permisos para esta acción»**. Eso es correcto: así se comprueba que la
+> seguridad por roles funciona.
+
+### Regenerar la colección
+
+Si agregas o cambias endpoints, actualiza la colección con:
+
+```bash
+python generate_postman.py
+```
+
+Se genera desde el mismo código de la API, así que siempre queda sincronizada.
+
+### Alternativa: importar el OpenAPI directamente
+
+Si prefieres no usar la colección incluida, Postman puede importar `backend/openapi.json`
+(o la URL `http://localhost:8000/openapi.json`) y generar las peticiones solo. La diferencia
+es que **no traerá los scripts que guardan el token y los ids**, así que tendrías que
+copiarlos a mano en cada petición.
 
 ---
 
@@ -659,8 +762,12 @@ backend/
 │       ├── orders.py    # Checkout y seguimiento de pedidos
 │       ├── account.py   # Direcciones, métodos de pago, devoluciones
 │       └── admin.py     # Panel de administración
+├── postman/
+│   ├── TECA.postman_collection.json    # Las 52 peticiones listas para importar
+│   └── TECA.postman_environment.json   # Variables (baseUrl, token, ids)
 ├── seed.py              # Carga datos de ejemplo
 ├── export_openapi.py    # Exporta la documentación a openapi.json
+├── generate_postman.py  # Regenera la colección de Postman
 ├── requirements.txt     # Dependencias de Python
 ├── .env.example         # Plantilla de configuración
 └── README.md

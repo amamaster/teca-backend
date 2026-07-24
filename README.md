@@ -22,6 +22,7 @@ Ahí encontrarás:
 
 - Instalación paso a paso (Windows, Mac y Linux)
 - Cómo levantar MongoDB con Docker
+- **Cómo probar los endpoints con Postman** (colección lista para importar)
 - **Guía de integración con Next.js** con código listo para copiar
 - Referencia completa de todos los endpoints
 - Las reglas de negocio que aplica el servidor
