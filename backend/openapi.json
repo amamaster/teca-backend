@@ -1,0 +1,3778 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TECA API",
+    "description": "\nAPI del e-commerce de muebles **TECA — Para toda la vida**.\n\nCubre la tienda pública (catálogo, carrito, checkout de invitado o con cuenta),\nel área del cliente (pedidos, direcciones, métodos de pago, devoluciones) y el\npanel de administración (usuarios internos, productos, pedidos, cupones,\nauditoría y finanzas).\n\n### Autenticación\nTodas las rutas protegidas usan **JWT Bearer**:\n\n1. `POST /auth/login` con correo y contraseña.\n2. Copia el `access_token` de la respuesta.\n3. Pulsa **Authorize** (arriba a la derecha) y pégalo.\n\n### Roles\n| Rol | Alcance |\n|---|---|\n| `cliente` | Tienda: carrito, pedidos propios, cuenta, reseñas |\n| `admin` | Acceso total al panel |\n| `editor` | Productos |\n| `encargado` | Productos, pedidos y devoluciones |\n| `vendedor` | Pedidos (y lectura de productos) |\n| `soporte` | Devoluciones y lectura de pedidos |\n| `finanzas` | Reportes financieros |\n\n### Convenciones\n- Moneda: balboas (B/.), equivalente a USD.\n- Los identificadores son `ObjectId` de Mongo expuestos como `id` (string).\n- Errores en formato `{\"detail\": \"mensaje\"}` con el código HTTP correspondiente.\n",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Autenticación"
+        ],
+        "summary": "Registrar un cliente nuevo",
+        "description": "Crea una cuenta de cliente con rol `cliente` y correo **sin verificar**.\n\nGenera un token de verificación que en producción se enviaría por correo; con `DEV_MODE=true` se devuelve en la respuesta (`verification_token`) para poder probar el flujo sin servidor de correo.\n\n**Errores:** `409` si el correo ya está registrado.",
+        "operationId": "register_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Registro de cliente"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "El correo ya está registrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-email/{token}": {
+      "get": {
+        "tags": [
+          "Autenticación"
+        ],
+        "summary": "Verificar el correo electrónico",
+        "description": "Marca la cuenta como verificada usando el token recibido en el registro. Corresponde a la pantalla *«Verifica tu correo para continuar»*.\n\n**Errores:** `400` si el token es inválido o ya fue usado.",
+        "operationId": "verify_email_auth_verify_email__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Token de verificación recibido al registrarse",
+              "title": "Token"
+            },
+            "description": "Token de verificación recibido al registrarse"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Token de verificación inválido"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Autenticación"
+        ],
+        "summary": "Iniciar sesión y obtener el token JWT",
+        "description": "Valida correo y contraseña y devuelve:\n\n- `access_token`: JWT para el header `Authorization: Bearer <token>`.\n- `must_change_password`: `true` cuando es un usuario interno con contraseña temporal, para que el frontend lo obligue a cambiarla en el primer ingreso.\n- `user`: datos básicos (id, nombre, correo, rol, correo verificado).\n\nSirve tanto para clientes como para usuarios internos del panel; el rol viene dentro del token y en `user.role`.\n\n**Errores:** `401` credenciales incorrectas · `403` cuenta inactiva.",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Inicio de sesión"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Correo o contraseña incorrectos"
+          },
+          "403": {
+            "description": "La cuenta está inactiva"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "tags": [
+          "Autenticación"
+        ],
+        "summary": "Solicitar recuperación de contraseña",
+        "description": "Pantalla *«¿Olvidaste tu contraseña?»*. Genera un token de reseteo válido por **1 hora**.\n\nPor seguridad responde siempre el mismo mensaje, exista o no el correo, para no revelar qué cuentas están registradas. Con `DEV_MODE=true` se incluye el `reset_token` en la respuesta para poder probar el flujo.",
+        "operationId": "forgot_password_auth_forgot_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Solicitud de recuperación"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "tags": [
+          "Autenticación"
+        ],
+        "summary": "Restablecer la contraseña con el token",
+        "description": "Define una contraseña nueva (mínimo 8 caracteres) usando el token enviado por correo. El token se invalida tras usarse.\n\n**Errores:** `400` si el token es inválido o pasó más de 1 hora.",
+        "operationId": "reset_password_auth_reset_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Restablecer contraseña"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Token inválido o expirado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "tags": [
+          "Autenticación"
+        ],
+        "summary": "Cambiar la contraseña estando autenticado",
+        "description": "Requiere la contraseña actual. También es el endpoint que usa el usuario interno para reemplazar su contraseña temporal (deja `must_change_password` en `false`).\n\n🔒 Requiere token. **Errores:** `400` si la contraseña actual no coincide.",
+        "operationId": "change_password_auth_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cambio de contraseña"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "La contraseña actual es incorrecta"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Autenticación"
+        ],
+        "summary": "Ver mi perfil",
+        "description": "Datos del usuario dueño del token (pantalla *Mi cuenta*). Nunca incluye el hash de la contraseña.\n\n🔒 Requiere token.",
+        "operationId": "me_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Autenticación"
+        ],
+        "summary": "Editar mi perfil",
+        "description": "Actualiza nombre y/o teléfono. Los campos omitidos o nulos se dejan intactos (actualización parcial).\n\n🔒 Requiere token.",
+        "operationId": "update_profile_auth_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Edición de perfil"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/products": {
+      "get": {
+        "tags": [
+          "Catálogo"
+        ],
+        "summary": "Listar productos del catálogo",
+        "description": "Alimenta la pantalla **Catálogo de productos** con todos sus filtros de la barra lateral. Solo devuelve productos activos.\n\n**Filtros disponibles**\n- `search`: búsqueda de texto en nombre y descripción (la lupa del header).\n- `category` y `material`: aceptan **varios valores separados por coma** (`?category=sofa,silla`), tal como los checkboxes del filtro lateral.\n- `min_price` / `max_price`: el deslizador de precio.\n\n**Ordenamiento** (`sort`), igual que el desplegable *Ordenar por*:\n| Valor | Significado |\n|---|---|\n| `price_asc` | Precio de menor a mayor |\n| `price_desc` | Precio de mayor a menor |\n| `newest` | Más nuevos |\n| `relevance` | Más relevantes (mejor calificados) — por defecto |\n\n**Respuesta:** `items`, `total`, `page`, `page_size` y `total_pages`, para pintar el texto *«Mostrando 1-8 de 24 productos»* y la paginación.",
+        "operationId": "list_products_products_get",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Búsqueda por texto en nombre y descripción",
+              "title": "Search"
+            },
+            "description": "Búsqueda por texto en nombre y descripción"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Categorías separadas por coma: sofa, silla, mesa, cama, lampara, espejo",
+              "title": "Category"
+            },
+            "description": "Categorías separadas por coma: sofa, silla, mesa, cama, lampara, espejo"
+          },
+          {
+            "name": "material",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Materiales separados por coma: madera, tela, metal, vidrio",
+              "title": "Material"
+            },
+            "description": "Materiales separados por coma: madera, tela, metal, vidrio"
+          },
+          {
+            "name": "min_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0.0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Precio mínimo en balboas (B/.)",
+              "title": "Min Price"
+            },
+            "description": "Precio mínimo en balboas (B/.)"
+          },
+          {
+            "name": "max_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0.0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Precio máximo en balboas (B/.)",
+              "title": "Max Price"
+            },
+            "description": "Precio máximo en balboas (B/.)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "price_asc",
+                "price_desc",
+                "newest",
+                "relevance"
+              ],
+              "type": "string",
+              "description": "Orden: price_asc (menor a mayor), price_desc (mayor a menor), newest (más nuevos), relevance (más relevantes)",
+              "default": "relevance",
+              "title": "Sort"
+            },
+            "description": "Orden: price_asc (menor a mayor), price_desc (mayor a menor), newest (más nuevos), relevance (más relevantes)"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Número de página, empezando en 1",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Número de página, empezando en 1"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Productos por página (máx. 50)",
+              "default": 8,
+              "title": "Page Size"
+            },
+            "description": "Productos por página (máx. 50)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{product_id}": {
+      "get": {
+        "tags": [
+          "Catálogo"
+        ],
+        "summary": "Detalle de un producto",
+        "description": "Datos completos para la ficha del producto: precio, descripción, material, color, stock, galería de imágenes (`images`) y las viñetas de *Detalles del producto* (`dimensions`, `structure`, `warranty`), además de `rating_avg` y `rating_count`.\n\nEl campo `stock` es el que limita el selector de cantidad (*«No puedes seleccionar más de N unidades»*).\n\n**Errores:** `404` si no existe o está inactivo.",
+        "operationId": "get_product_products__product_id__get",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del producto devuelto por el catálogo",
+              "title": "Product Id"
+            },
+            "description": "ID del producto devuelto por el catálogo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Producto no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{product_id}/reviews": {
+      "get": {
+        "tags": [
+          "Catálogo"
+        ],
+        "summary": "Reseñas de un producto",
+        "description": "Bloque **Reseñas del producto**. Devuelve:\n\n- `items`: reseñas paginadas (más recientes primero), cada una con nombre del autor, comentario, fecha y `verified_purchase` para la etiqueta *Compra verificada*.\n- `average`: promedio general (el número grande, ej. `4.2`).\n- `distribution`: cantidad de reseñas por estrella (`{\"5\": 22, \"4\": 10, ...}`) para dibujar las barras 5★–1★.\n- `total`: total de reseñas (*«Ver todas las reseñas (11)»*).",
+        "operationId": "list_reviews_products__product_id__reviews_get",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del producto",
+              "title": "Product Id"
+            },
+            "description": "ID del producto"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Número de página, empezando en 1",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Número de página, empezando en 1"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Reseñas por página (máx. 50)",
+              "default": 10,
+              "title": "Page Size"
+            },
+            "description": "Reseñas por página (máx. 50)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Catálogo"
+        ],
+        "summary": "Escribir una reseña",
+        "description": "Botón *Escribir mi reseña*. Recibe `rating` (1 a 5) y `comment` (máx. 500 caracteres).\n\nLa etiqueta **Compra verificada** se calcula sola: se marca `verified_purchase` en `true` si el usuario tiene un pedido **entregado** que incluye ese producto. Tras guardar, recalcula el promedio y el conteo del producto.\n\n🔒 Requiere token. **Errores:** `404` producto inexistente · `409` si ya reseñaste este producto (una reseña por usuario).",
+        "operationId": "create_review_products__product_id__reviews_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del producto a reseñar",
+              "title": "Product Id"
+            },
+            "description": "ID del producto a reseñar"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reseña"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Producto no encontrado"
+          },
+          "409": {
+            "description": "Ya publicaste una reseña de este producto"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cart": {
+      "get": {
+        "tags": [
+          "Carrito"
+        ],
+        "summary": "Ver mi carrito",
+        "description": "Pantalla **Carrito de compra**. Devuelve los items con datos frescos del producto (nombre, precio, material, imagen, stock y subtotal de línea) más el bloque *Resumen del pedido*:\n\n| Campo | Uso en la pantalla |\n|---|---|\n| `subtotal` | Suma de las líneas |\n| `shipping` | Envío (gratis al superar el umbral configurado) |\n| `missing_for_free_shipping` | *«Te faltan B/. XX.XX para envío gratis»* |\n| `discount` / `coupon_code` | Línea de descuento del cupón aplicado |\n| `total` | Total a pagar |\n\nSi el carrito no existe todavía, se crea vacío.\n\n🔒 Requiere token.",
+        "operationId": "get_cart_cart_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/cart/items": {
+      "post": {
+        "tags": [
+          "Carrito"
+        ],
+        "summary": "Agregar un producto al carrito",
+        "description": "Botón *Agregar al carrito*. Si el producto ya estaba en el carrito, **suma** la cantidad en lugar de duplicar la línea.\n\nValida el stock contra la cantidad resultante y devuelve el carrito completo ya recalculado, para que el frontend refresque el resumen con una sola llamada.\n\n🔒 Requiere token. **Errores:** `404` producto inexistente · `409` si se supera el stock disponible.",
+        "operationId": "add_item_cart_items_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Item del carrito"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Producto no encontrado"
+          },
+          "409": {
+            "description": "No puedes seleccionar más de N unidades"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/cart/items/{product_id}": {
+      "put": {
+        "tags": [
+          "Carrito"
+        ],
+        "summary": "Cambiar la cantidad de un producto",
+        "description": "Fija la cantidad exacta de una línea del carrito (selector `- 1 +`). A diferencia de `POST /cart/items`, **reemplaza** la cantidad en vez de sumarla.\n\nDevuelve el carrito recalculado.\n\n🔒 Requiere token. **Errores:** `404` si el producto no existe o no está en el carrito · `409` si la cantidad supera el stock.",
+        "operationId": "update_item_cart_items__product_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del producto que ya está en el carrito",
+              "title": "Product Id"
+            },
+            "description": "ID del producto que ya está en el carrito"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Item del carrito"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "El producto no está en el carrito"
+          },
+          "409": {
+            "description": "No puedes seleccionar más de N unidades"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Carrito"
+        ],
+        "summary": "Quitar un producto del carrito",
+        "description": "Icono de papelera de la fila. Elimina la línea completa sin importar la cantidad y devuelve el carrito recalculado. Es idempotente: si el producto ya no estaba, responde igual sin error.\n\n🔒 Requiere token.",
+        "operationId": "remove_item_cart_items__product_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del producto a quitar del carrito",
+              "title": "Product Id"
+            },
+            "description": "ID del producto a quitar del carrito"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cart/coupon": {
+      "post": {
+        "tags": [
+          "Carrito"
+        ],
+        "summary": "Aplicar un cupón de descuento",
+        "description": "Aplica un código de descuento al carrito (ej. `TECA10` = 10 %). El código no distingue mayúsculas.\n\n**Solo se admite un cupón a la vez:** si ya había uno aplicado, este lo reemplaza (el aviso *«Si aplicas otro, el cupón actual será reemplazado»*).\n\nDevuelve el carrito con la línea `discount` y el `total` actualizados.\n\n🔒 Requiere token. **Errores:** `404` si el cupón no existe o está inactivo.",
+        "operationId": "apply_coupon_cart_coupon_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cupón a aplicar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Cupón inválido o expirado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Carrito"
+        ],
+        "summary": "Quitar el cupón aplicado",
+        "description": "Botón *Eliminar* del recuadro «Código de cupón aplicado». Deja el descuento en 0 y devuelve el carrito recalculado.\n\n🔒 Requiere token.",
+        "operationId": "remove_coupon_cart_coupon_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/orders/checkout": {
+      "post": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Crear un pedido (checkout)",
+        "description": "Cierra la compra y genera el pedido. Es el paso *Pago → Confirmación* del checkout.\n\n**Funciona con y sin cuenta.** El token es opcional: si se envía, el pedido queda asociado al usuario y se le vacía el carrito; si no, se registra como pedido de **invitado** (por eso `email` es obligatorio siempre — es el correo con el que luego podrá consultar su pedido).\n\n**Qué hace, en orden:**\n1. Valida que cada producto exista, esté activo y tenga stock suficiente.\n2. Recalcula precios **en el servidor** (nunca confía en los totales del frontend) y aplica el cupón si se envió.\n3. Genera el número correlativo del pedido (`TEC-2026-001`) con un contador atómico por año.\n4. Descuenta el stock de cada producto.\n5. Deja el pedido en estado `confirmado` con su primer registro en la línea de tiempo.\n\n**Métodos de pago** (`payment_method`): `card`, `paypal`, `bitcoin`, `yappy`. El cobro está **simulado**: el pedido nace con `payment_status: pagado`; aquí se integraría la pasarela real.\n\n**Errores:** `404` producto inexistente · `409` stock insuficiente · `400` cupón inválido.",
+        "operationId": "checkout_orders_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Datos del checkout"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Producto no encontrado"
+          },
+          "409": {
+            "description": "Stock insuficiente para algún producto"
+          },
+          "400": {
+            "description": "Cupón inválido o expirado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/orders/mine": {
+      "get": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Mis pedidos",
+        "description": "Pantalla **Mis pedidos** del área de cliente. Devuelve todos los pedidos del usuario autenticado, del más reciente al más antiguo.\n\nUn arreglo vacío es la señal para mostrar el estado *«Todavía no tienes pedidos»*.\n\n🔒 Requiere token.",
+        "operationId": "my_orders_orders_mine_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/orders/lookup": {
+      "post": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Consultar un pedido sin cuenta (invitado)",
+        "description": "Permite a quien compró como invitado rastrear su pedido: *«Puedes consultar el estado de tu pedido usando el número de pedido y tu correo electrónico»*.\n\nExige **ambos datos** (`order_number` + `email`) y deben coincidir, de modo que un número de pedido adivinado no basta para ver los datos de otra persona.\n\n**No requiere token. Errores:** `404` si la combinación no coincide.",
+        "operationId": "lookup_order_orders_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Consulta de pedido (invitado)"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Pedido no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_number}": {
+      "get": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Detalle y seguimiento de un pedido",
+        "description": "Pantalla **Pedido TEC-2026-001**: información de envío, productos, resumen de totales y `tracking_number` (número de guía del courier).\n\nEl campo `status_history` trae cada estado con su fecha y hora, que es lo que dibuja la línea de tiempo *Pedido confirmado → En preparación → En camino → Entregado*.\n\n**Visibilidad:** un `cliente` solo puede ver sus propios pedidos; los roles internos pueden consultar cualquiera.\n\n🔒 Requiere token. **Errores:** `404` si no existe o no te pertenece.",
+        "operationId": "get_order_orders__order_number__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Número del pedido. Ej. «TEC-2026-001»",
+              "title": "Order Number"
+            },
+            "description": "Número del pedido. Ej. «TEC-2026-001»"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Pedido no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/account/addresses": {
+      "get": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Listar mis direcciones",
+        "description": "Pantalla **Direcciones**. Devuelve la libreta de direcciones del usuario; la que tenga `is_default: true` es la que el checkout debe preseleccionar.\n\n🔒 Requiere token.",
+        "operationId": "list_addresses_account_addresses_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Agregar una dirección",
+        "description": "Guarda una dirección de envío (nombre, teléfono, provincia, ciudad, dirección y referencia opcional).\n\nSi se envía `is_default: true`, el resto de direcciones dejan de ser la predeterminada automáticamente.\n\n🔒 Requiere token.",
+        "operationId": "create_address_account_addresses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Dirección guardada"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/account/addresses/{address_id}": {
+      "put": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Editar una dirección",
+        "description": "Reemplaza todos los campos de la dirección (envía el objeto completo). Marcarla como predeterminada desmarca las demás.\n\nSolo puedes editar direcciones propias.\n\n🔒 Requiere token. **Errores:** `404` si no existe o no te pertenece.",
+        "operationId": "update_address_account_addresses__address_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "address_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID de la dirección a editar",
+              "title": "Address Id"
+            },
+            "description": "ID de la dirección a editar"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Dirección guardada"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Dirección no encontrada"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Eliminar una dirección",
+        "description": "Borra la dirección de la libreta. Responde `204` sin cuerpo. Los pedidos ya realizados conservan su dirección: guardan una copia, no una referencia.\n\n🔒 Requiere token. **Errores:** `404` si no existe o no te pertenece.",
+        "operationId": "delete_address_account_addresses__address_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "address_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID de la dirección a eliminar",
+              "title": "Address Id"
+            },
+            "description": "ID de la dirección a eliminar"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Dirección no encontrada"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/account/payment-methods": {
+      "get": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Listar mis métodos de pago",
+        "description": "Pantalla **Métodos de pago**. Devuelve las tarjetas y cuentas guardadas con su etiqueta (*«Visa terminada en 4821»*), vencimiento, titular y cuál es la **Principal** (`is_default`).\n\n🔒 Requiere token.",
+        "operationId": "list_payment_methods_account_payment_methods_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Agregar un método de pago",
+        "description": "Guarda un método de pago (`visa`, `mastercard` o `paypal`).\n\n⚠️ **Por diseño solo se almacenan datos no sensibles**: la etiqueta con los últimos 4 dígitos, el titular y el vencimiento. Nunca el número completo de tarjeta ni el CVV — eso corresponde al proveedor de pagos (tokenización).\n\nMarcarlo como principal desmarca los demás.\n\n🔒 Requiere token.",
+        "operationId": "create_payment_method_account_payment_methods_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Método de pago guardado"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/account/payment-methods/{method_id}": {
+      "put": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Editar un método de pago",
+        "description": "Botón *Editar*. Reemplaza los datos del método (por ejemplo, actualizar el vencimiento o marcarlo como principal).\n\n🔒 Requiere token. **Errores:** `404` si no existe o no te pertenece.",
+        "operationId": "update_payment_method_account_payment_methods__method_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "method_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del método de pago a editar",
+              "title": "Method Id"
+            },
+            "description": "ID del método de pago a editar"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Método de pago guardado"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Método de pago no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Eliminar un método de pago",
+        "description": "Botón *Eliminar*. Responde `204` sin cuerpo.\n\n🔒 Requiere token. **Errores:** `404` si no existe o no te pertenece.",
+        "operationId": "delete_payment_method_account_payment_methods__method_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "method_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del método de pago a eliminar",
+              "title": "Method Id"
+            },
+            "description": "ID del método de pago a eliminar"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Método de pago no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/account/returns": {
+      "get": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Listar mis devoluciones",
+        "description": "Pantalla **Mis devoluciones**: *«Consulta el estado de tus solicitudes de devolución o cambio»*. Ordenadas de la más reciente a la más antigua.\n\nCada solicitud trae su número (`DEV-2026-0001`), el producto, el motivo, la fecha y el `status`, que es la etiqueta de color de la tarjeta:\n\n| Estado | Etiqueta |\n|---|---|\n| `en_revision` | En revisión |\n| `aprobado` | Aprobado |\n| `rechazado` | Rechazado |\n| `completado` | Completado |\n\n🔒 Requiere token.",
+        "operationId": "list_returns_account_returns_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Mi cuenta"
+        ],
+        "summary": "Solicitar una devolución",
+        "description": "Crea una solicitud de devolución o cambio para un producto de un pedido propio, indicando el motivo (ej. *«Producto dañado»*).\n\nValida que el pedido sea tuyo y que el producto realmente pertenezca a ese pedido. Nace en estado `en_revision`; el equipo la resuelve desde el panel.\n\n🔒 Requiere token. **Errores:** `404` pedido inexistente o ajeno · `400` si el producto no pertenece a ese pedido.",
+        "operationId": "create_return_account_returns_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Solicitud de devolución"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Pedido no encontrado"
+          },
+          "400": {
+            "description": "El producto no pertenece a este pedido"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Listar usuarios internos",
+        "description": "Tabla de la pantalla **Usuarios** (*«Gestiona los usuarios internos de la plataforma»*): nombre, correo, rol y estado activo/inactivo.\n\nSolo devuelve cuentas con rol interno — los clientes de la tienda no aparecen aquí.\n\nEl parámetro `role` implementa el *Filtrado por Rol* (`?role=vendedor`).\n\n🔒 Rol requerido: **admin**.",
+        "operationId": "list_internal_users_admin_users_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtrar por rol: admin, vendedor, encargado, soporte, editor o finanzas",
+              "title": "Role"
+            },
+            "description": "Filtrar por rol: admin, vendedor, encargado, soporte, editor o finanzas"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Crear un usuario interno",
+        "description": "Formulario **Nuevo Usuario Interno**: datos personales, rol asignado y contraseña temporal.\n\n- `must_change_password`: corresponde al switch *«El usuario deberá cambiarla en su primer ingreso»*. El login devuelve esta bandera para que el frontend fuerce el cambio.\n- `active`: switch *«Usuario activo — puede iniciar sesión inmediatamente»*.\n- El correo se marca como verificado (lo crea un administrador, no requiere confirmación).\n\nQueda registrado en la auditoría.\n\n🔒 Rol requerido: **admin**. **Errores:** `409` si el correo ya existe.",
+        "operationId": "create_internal_user_admin_users_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Usuario interno (crear)"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "El correo ya está registrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}": {
+      "patch": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Editar un usuario interno",
+        "description": "Modal **Editar Usuario** (nombre, correo, rol, estado). Es una actualización **parcial**: solo se modifican los campos enviados.\n\nTambién es el endpoint del switch Activo/Inactivo de la tabla — basta con enviar `{\"active\": false}`. Un usuario inactivo no puede iniciar sesión y sus tokens dejan de funcionar.\n\nQueda registrado en la auditoría.\n\n🔒 Rol requerido: **admin**. **Errores:** `404` si no existe.",
+        "operationId": "update_internal_user_admin_users__user_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del usuario interno a editar",
+              "title": "User Id"
+            },
+            "description": "ID del usuario interno a editar"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Usuario interno (editar)"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Usuario no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Eliminar un usuario interno",
+        "description": "Icono de papelera de la tabla de usuarios. Responde `204` sin cuerpo.\n\n**Protección:** no puedes eliminar tu propia cuenta (evita que un admin se quede fuera del sistema). Para retirar el acceso sin borrar el historial, conviene desactivar en vez de eliminar.\n\nQueda registrado en la auditoría.\n\n🔒 Rol requerido: **admin**. **Errores:** `400` si intentas eliminarte a ti mismo · `404` si no existe.",
+        "operationId": "delete_internal_user_admin_users__user_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del usuario interno a eliminar",
+              "title": "User Id"
+            },
+            "description": "ID del usuario interno a eliminar"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "No puedes eliminar tu propia cuenta"
+          },
+          "404": {
+            "description": "Usuario no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/roles": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Matriz de roles y permisos",
+        "description": "Pantalla **Permisos / Roles**. Devuelve cada rol interno con la lista de módulos que puede usar, para pintar la matriz de permisos y los chips de rol de los formularios.\n\nEl sufijo `:lectura` indica acceso de solo lectura (ej. `pedidos:lectura`).\n\n🔒 Requiere cualquier rol interno.",
+        "operationId": "list_roles_admin_roles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/products": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Listar productos (panel)",
+        "description": "Tabla de la pantalla **Productos** del panel: nombre, categoría, precio y stock, con el pie *«Mostrando 6 de 12 productos»* y paginación.\n\nA diferencia del catálogo público, **incluye los productos inactivos**.\n\n**Filtros:** `search` (buscador por nombre), `category` y `low_stock=true` para ver solo lo que está por agotarse (stock < 5, la etiqueta *Bajo*).\n\n🔒 Requiere cualquier rol interno.",
+        "operationId": "list_products_admin_admin_products_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Buscar por nombre del producto",
+              "title": "Search"
+            },
+            "description": "Buscar por nombre del producto"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Categoría: sofa, silla, mesa, cama, lampara o espejo",
+              "title": "Category"
+            },
+            "description": "Categoría: sofa, silla, mesa, cama, lampara o espejo"
+          },
+          {
+            "name": "low_stock",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Solo productos con stock bajo (< 5)",
+              "default": false,
+              "title": "Low Stock"
+            },
+            "description": "Solo productos con stock bajo (< 5)"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Número de página, empezando en 1",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Número de página, empezando en 1"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Productos por página (máx. 50)",
+              "default": 6,
+              "title": "Page Size"
+            },
+            "description": "Productos por página (máx. 50)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Crear un producto",
+        "description": "Botón **+ Nuevo** de la pantalla Productos.\n\nCampos obligatorios: `name`, `price` (mayor que 0), `category` y `material`. Opcionales: descripción, color, stock, `images` (URLs de la galería) y las viñetas de la ficha (`dimensions`, `structure`, `warranty`).\n\nNace con calificación en 0 y, si `active` es `true`, aparece de inmediato en el catálogo público. Queda registrado en la auditoría.\n\n🔒 Roles: **admin**, **editor**, **encargado**.",
+        "operationId": "create_product_admin_products_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Producto (crear)"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/products/{product_id}": {
+      "patch": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Editar un producto",
+        "description": "Icono de lápiz de la tabla. Actualización **parcial**: envía solo los campos que cambian.\n\nEs también la vía para reponer inventario (`{\"stock\": 20}`) o para ocultar un producto del catálogo sin borrarlo (`{\"active\": false}`).\n\nQueda registrado en la auditoría.\n\n🔒 Roles: **admin**, **editor**, **encargado**. **Errores:** `404` si no existe.",
+        "operationId": "update_product_admin_products__product_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del producto a editar",
+              "title": "Product Id"
+            },
+            "description": "ID del producto a editar"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Producto (editar)"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Producto no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Eliminar un producto",
+        "description": "Modal *«¿Eliminar este producto? Esta opción no se puede deshacer»*. Responde `204` sin cuerpo.\n\nBorra el producto del catálogo de forma permanente. Los pedidos anteriores no se ven afectados: guardan una copia de los datos del producto. Si solo quieres retirarlo de la tienda, usa `PATCH` con `active: false`.\n\nQueda registrado en la auditoría.\n\n🔒 Roles: **admin**, **editor**, **encargado**. **Errores:** `404` si no existe.",
+        "operationId": "delete_product_admin_products__product_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID del producto a eliminar",
+              "title": "Product Id"
+            },
+            "description": "ID del producto a eliminar"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Producto no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/orders": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Listar todos los pedidos",
+        "description": "Bandeja de pedidos del panel: todos los pedidos de la tienda (de clientes y de invitados), del más reciente al más antiguo, con paginación.\n\nFiltra por estado con `?status=confirmado` (`confirmado`, `en_preparacion`, `en_camino`, `entregado`, `cancelado`).\n\n🔒 Roles: **admin**, **vendedor**, **encargado**, **soporte**.",
+        "operationId": "list_orders_admin_orders_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtrar por estado: confirmado, en_preparacion, en_camino, entregado o cancelado",
+              "title": "Status"
+            },
+            "description": "Filtrar por estado: confirmado, en_preparacion, en_camino, entregado o cancelado"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Número de página, empezando en 1",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Número de página, empezando en 1"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Pedidos por página (máx. 50)",
+              "default": 10,
+              "title": "Page Size"
+            },
+            "description": "Pedidos por página (máx. 50)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/orders/{order_number}/status": {
+      "patch": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Cambiar el estado de un pedido",
+        "description": "Avanza el pedido en su ciclo de vida y **agrega una entrada con fecha y hora a `status_history`**, que es lo que alimenta la línea de tiempo que ve el cliente.\n\nFlujo normal: `confirmado → en_preparacion → en_camino → entregado` (o `cancelado` en cualquier punto).\n\nAl pasar a `en_camino` conviene enviar también `tracking_number`, el número de guía del courier (ej. `GLE-88420193PA`).\n\nSe identifica el pedido por su número (`TEC-2026-001`), no por su id. Queda registrado en la auditoría.\n\n🔒 Roles: **admin**, **vendedor**, **encargado**, **soporte**. **Errores:** `404` si no existe.",
+        "operationId": "update_order_status_admin_orders__order_number__status_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Número del pedido. Ej. «TEC-2026-001»",
+              "title": "Order Number"
+            },
+            "description": "Número del pedido. Ej. «TEC-2026-001»"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cambio de estado del pedido"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Pedido no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/returns": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Listar todas las devoluciones",
+        "description": "Bandeja de solicitudes de devolución de todos los clientes, de la más reciente a la más antigua.\n\nFiltra con `?status=en_revision` para ver únicamente lo pendiente de resolver.\n\n🔒 Roles: **admin**, **vendedor**, **encargado**, **soporte**.",
+        "operationId": "list_all_returns_admin_returns_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtrar por estado: en_revision, aprobado, rechazado o completado",
+              "title": "Status"
+            },
+            "description": "Filtrar por estado: en_revision, aprobado, rechazado o completado"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/returns/{return_id}/status": {
+      "patch": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Resolver una devolución",
+        "description": "Cambia el estado de una solicitud de devolución. El cliente ve el resultado en *Mis devoluciones*.\n\n| Estado | Significado |\n|---|---|\n| `en_revision` | Recién solicitada, pendiente de evaluar |\n| `aprobado` | Se acepta la devolución |\n| `rechazado` | No procede |\n| `completado` | Devolución finalizada (producto recibido / reembolso hecho) |\n\nQueda registrado en la auditoría.\n\n🔒 Roles: **admin**, **vendedor**, **encargado**, **soporte**. **Errores:** `404` si no existe.",
+        "operationId": "update_return_status_admin_returns__return_id__status_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "return_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "ID de la solicitud de devolución",
+              "title": "Return Id"
+            },
+            "description": "ID de la solicitud de devolución"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Resolución de la devolución"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Devolución no encontrada"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/coupons": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Listar cupones",
+        "description": "Todos los códigos de descuento con su porcentaje y si están activos.\n\n🔒 Requiere cualquier rol interno.",
+        "operationId": "list_coupons_admin_coupons_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Crear un cupón",
+        "description": "Crea un código de descuento porcentual (ej. `TECA10` con `discount_percent: 10`). El código se guarda **en mayúsculas** y debe ser único.\n\nLos clientes lo aplican desde el carrito con `POST /cart/coupon`. Poner `active: false` lo desactiva sin borrarlo.\n\nQueda registrado en la auditoría.\n\n🔒 Rol requerido: **admin**. **Errores:** `409` si el código ya existe.",
+        "operationId": "create_coupon_admin_coupons_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cupón"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "El cupón ya existe"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/coupons/{code}": {
+      "delete": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Eliminar un cupón",
+        "description": "Borra el cupón por su código. Responde `204` sin cuerpo.\n\nLos pedidos que ya lo usaron conservan el descuento aplicado. Queda registrado en la auditoría.\n\n🔒 Rol requerido: **admin**. **Errores:** `404` si no existe.",
+        "operationId": "delete_coupon_admin_coupons__code__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Código del cupón. Ej. «TECA10»",
+              "title": "Code"
+            },
+            "description": "Código del cupón. Ej. «TECA10»"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Cupón no encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/audit": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Registro de auditoría",
+        "description": "Pantalla **Auditoría**: historial de acciones administrativas, de la más reciente a la más antigua.\n\nCada entrada guarda **quién** (`actor_name`), **qué hizo** (`action`: crear, editar, eliminar, actualizar-estado), **sobre qué** (`entity`: usuario, producto, pedido, cupón, devolución), un `detail` legible y la fecha/hora.\n\nEs un registro de solo lectura: se escribe automáticamente y no se puede editar ni borrar desde la API.\n\n🔒 Rol requerido: **admin**.",
+        "operationId": "audit_log_admin_audit_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Número de página, empezando en 1",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Número de página, empezando en 1"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Registros por página (máx. 100)",
+              "default": 20,
+              "title": "Page Size"
+            },
+            "description": "Registros por página (máx. 100)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/dashboard": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Métricas del panel",
+        "description": "Tarjetas de la pantalla **Panel**. Una sola llamada devuelve todos los indicadores:\n\n| Campo | Significado |\n|---|---|\n| `total_orders` | Pedidos realizados (excluye cancelados) |\n| `total_revenue` | Ingresos acumulados en B/. |\n| `total_products` | Productos en el catálogo |\n| `low_stock_products` | Productos con stock bajo (< 5) — alerta de reposición |\n| `total_customers` | Clientes registrados |\n| `pending_returns` | Devoluciones en revisión, pendientes de resolver |\n\n🔒 Requiere cualquier rol interno.",
+        "operationId": "dashboard_admin_dashboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/finance/summary": {
+      "get": {
+        "tags": [
+          "Administración"
+        ],
+        "summary": "Resumen financiero",
+        "description": "Pantalla **Finanzas**. Agrega las ventas (excluyendo pedidos cancelados) en dos cortes:\n\n- `monthly`: por mes (`YYYY-MM`) con ingresos, cantidad de pedidos, descuentos otorgados y cobros de envío — ideal para la gráfica de evolución.\n- `by_payment_method`: ingresos y pedidos por método de pago (`card`, `paypal`, `bitcoin`, `yappy`) — ideal para la gráfica de distribución.\n\nLos montos vienen redondeados a 2 decimales, en balboas.\n\n🔒 Roles: **admin**, **finanzas**.",
+        "operationId": "finance_summary_admin_finance_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "Salud"
+        ],
+        "summary": "Estado del servicio",
+        "description": "Devuelve `{'status': 'ok'}` si la API está en línea. Útil para healthchecks.",
+        "operationId": "health__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Dirección guardada": {
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "title": "Nombre de quien recibe"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Teléfono de contacto"
+          },
+          "province": {
+            "type": "string",
+            "title": "Provincia"
+          },
+          "city": {
+            "type": "string",
+            "title": "Ciudad o distrito"
+          },
+          "address_line": {
+            "type": "string",
+            "title": "Dirección"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencia"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Predeterminada",
+            "description": "Al marcarla, las demás dejan de serlo",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "full_name",
+          "phone",
+          "province",
+          "city",
+          "address_line"
+        ],
+        "title": "Dirección guardada",
+        "example": {
+          "address_line": "Ave. Álvarez, casa 12",
+          "city": "David",
+          "full_name": "Aldair Gallardo",
+          "is_default": true,
+          "phone": "6000-0000",
+          "province": "Chiriquí",
+          "reference": "Frente al parque"
+        }
+      },
+      "Item del carrito": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "ID del producto",
+            "description": "Identificador devuelto por el catálogo"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Cantidad",
+            "description": "No puede superar el stock disponible"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "quantity"
+        ],
+        "title": "Item del carrito",
+        "example": {
+          "product_id": "6650f1a2b3c4d5e6f7a8b9c0",
+          "quantity": 1
+        }
+      },
+      "Cambio de contraseña": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "title": "Contraseña actual"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Contraseña nueva",
+            "description": "Mínimo 8 caracteres"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "Cambio de contraseña"
+      },
+      "Datos del checkout": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Correo del comprador",
+            "description": "Obligatorio también para invitados: es con lo que luego consultan su pedido"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Producto a comprar"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Productos",
+            "description": "Al menos un producto"
+          },
+          "shipping_address": {
+            "$ref": "#/components/schemas/Dirección de envío",
+            "title": "Dirección de envío"
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "card",
+              "paypal",
+              "bitcoin",
+              "yappy"
+            ],
+            "title": "Método de pago",
+            "description": "`card` (Visa/Mastercard), `paypal`, `bitcoin` o `yappy`"
+          },
+          "coupon_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Código de cupón",
+            "description": "Opcional"
+          },
+          "shipping_method": {
+            "type": "string",
+            "title": "Método de envío",
+            "default": "envío estándar"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "items",
+          "shipping_address",
+          "payment_method"
+        ],
+        "title": "Datos del checkout",
+        "example": {
+          "coupon_code": "TECA10",
+          "email": "cliente@teca.com",
+          "items": [
+            {
+              "product_id": "6650f1a2b3c4d5e6f7a8b9c0",
+              "quantity": 1
+            }
+          ],
+          "payment_method": "yappy",
+          "shipping_address": {
+            "address_line": "Ave. Álvarez, casa 12",
+            "city": "David",
+            "full_name": "Aldair Gallardo",
+            "phone": "6000-0000",
+            "province": "Chiriquí",
+            "reference": "Frente al parque"
+          },
+          "shipping_method": "envío estándar"
+        }
+      },
+      "Producto a comprar": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "ID del producto"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Cantidad"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "quantity"
+        ],
+        "title": "Producto a comprar"
+      },
+      "Cupón a aplicar": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Código",
+            "description": "No distingue mayúsculas. Ej. «TECA10»"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "Cupón a aplicar",
+        "example": {
+          "code": "TECA10"
+        }
+      },
+      "Cupón": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 3,
+            "title": "Código",
+            "description": "Se guarda en mayúsculas y debe ser único"
+          },
+          "discount_percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Descuento (%)",
+            "description": "Porcentaje sobre el subtotal"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Activo",
+            "description": "Ponlo en falso para desactivarlo sin borrarlo",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "discount_percent"
+        ],
+        "title": "Cupón",
+        "example": {
+          "active": true,
+          "code": "TECA10",
+          "discount_percent": 10
+        }
+      },
+      "Solicitud de recuperación": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Correo electrónico",
+            "description": "Correo de la cuenta a recuperar"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "Solicitud de recuperación",
+        "example": {
+          "email": "cliente@teca.com"
+        }
+      },
+      "Error de validación": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/Detalle de validación"
+            },
+            "type": "array",
+            "title": "Detalle del error"
+          }
+        },
+        "type": "object",
+        "title": "Error de validación"
+      },
+      "Usuario interno (crear)": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Nombre"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Correo electrónico",
+            "description": "Debe ser único"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripción",
+            "description": "Nota interna sobre el usuario"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teléfono"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "vendedor",
+              "encargado",
+              "soporte",
+              "editor",
+              "finanzas"
+            ],
+            "title": "Rol asignado",
+            "description": "Define a qué módulos del panel tiene acceso"
+          },
+          "temp_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Contraseña temporal",
+            "description": "Mínimo 8 caracteres"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Debe cambiar la contraseña",
+            "description": "Obliga a cambiarla en el primer ingreso",
+            "default": true
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Activo",
+            "description": "Si es falso, no puede iniciar sesión",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "role",
+          "temp_password"
+        ],
+        "title": "Usuario interno (crear)",
+        "example": {
+          "active": true,
+          "description": "Encargado de inventario",
+          "email": "usuarioa@teca.com",
+          "must_change_password": true,
+          "name": "Usuario A",
+          "phone": "6000-0000",
+          "role": "encargado",
+          "temp_password": "Temporal123"
+        }
+      },
+      "Usuario interno (editar)": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correo electrónico"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripción"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teléfono"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "admin",
+                  "vendedor",
+                  "encargado",
+                  "soporte",
+                  "editor",
+                  "finanzas"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rol asignado"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activo",
+            "description": "Switch Activo/Inactivo de la tabla de usuarios"
+          }
+        },
+        "type": "object",
+        "title": "Usuario interno (editar)",
+        "example": {
+          "active": false,
+          "role": "soporte"
+        }
+      },
+      "Inicio de sesión": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Correo electrónico"
+          },
+          "password": {
+            "type": "string",
+            "title": "Contraseña"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "Inicio de sesión",
+        "example": {
+          "email": "admin@teca.com",
+          "password": "Admin1234!"
+        }
+      },
+      "Consulta de pedido (invitado)": {
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "title": "Número de pedido",
+            "description": "Ej. «TEC-2026-001»"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Correo del pedido",
+            "description": "Debe coincidir con el usado al comprar"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_number",
+          "email"
+        ],
+        "title": "Consulta de pedido (invitado)",
+        "example": {
+          "email": "cliente@teca.com",
+          "order_number": "TEC-2026-001"
+        }
+      },
+      "Cambio de estado del pedido": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmado",
+              "en_preparacion",
+              "en_camino",
+              "entregado",
+              "cancelado"
+            ],
+            "title": "Nuevo estado",
+            "description": "`confirmado`, `en_preparacion`, `en_camino`, `entregado` o `cancelado`"
+          },
+          "tracking_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Número de guía",
+            "description": "Guía del courier; se envía al pasar a «en camino»"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Cambio de estado del pedido",
+        "example": {
+          "status": "en_camino",
+          "tracking_number": "GLE-88420193PA"
+        }
+      },
+      "Método de pago guardado": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "visa",
+              "mastercard",
+              "paypal"
+            ],
+            "title": "Tipo"
+          },
+          "label": {
+            "type": "string",
+            "title": "Etiqueta",
+            "description": "Texto que ve el usuario. Ej. «Visa terminada en 4821». Nunca el número completo"
+          },
+          "holder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Titular"
+          },
+          "expires": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vencimiento",
+            "description": "Ej. «08/2028»"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correo de PayPal",
+            "description": "Solo para tipo `paypal`"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Principal",
+            "description": "Al marcarlo, los demás dejan de serlo",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "label"
+        ],
+        "title": "Método de pago guardado",
+        "example": {
+          "expires": "08/2028",
+          "holder_name": "Aldair Gallardo",
+          "is_default": true,
+          "label": "Visa terminada en 4821",
+          "type": "visa"
+        }
+      },
+      "Producto (crear)": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 2,
+            "title": "Nombre",
+            "description": "Nombre visible en el catálogo"
+          },
+          "description": {
+            "type": "string",
+            "title": "Descripción",
+            "description": "Texto largo de la ficha del producto",
+            "default": ""
+          },
+          "price": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Precio",
+            "description": "Precio unitario en balboas (B/.)"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "sofa",
+              "silla",
+              "mesa",
+              "cama",
+              "lampara",
+              "espejo"
+            ],
+            "title": "Categoría",
+            "description": "Categoría del filtro lateral del catálogo"
+          },
+          "material": {
+            "type": "string",
+            "enum": [
+              "madera",
+              "tela",
+              "metal",
+              "vidrio"
+            ],
+            "title": "Material",
+            "description": "Material principal, usado como filtro"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color",
+            "description": "Ej. «Gris», «Roble»"
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Stock",
+            "description": "Unidades disponibles; limita la cantidad que se puede comprar",
+            "default": 0
+          },
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Imágenes",
+            "description": "URLs de las vistas del producto (la primera es la principal)",
+            "default": []
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medidas",
+            "description": "Ej. «200 cm x 85 cm»"
+          },
+          "structure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estructura",
+            "description": "Ej. «Madera»"
+          },
+          "warranty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Garantía",
+            "description": "Ej. «6 meses»"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Activo",
+            "description": "Si es falso, no aparece en el catálogo público",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "price",
+          "category",
+          "material"
+        ],
+        "title": "Producto (crear)",
+        "example": {
+          "active": true,
+          "category": "sofa",
+          "color": "Gris",
+          "description": "Sofá de tres puestos, tapizado en tela resistente.",
+          "dimensions": "200 cm x 85 cm",
+          "images": [],
+          "material": "tela",
+          "name": "Sofá moderno de sala",
+          "price": 299.99,
+          "stock": 7,
+          "structure": "Madera",
+          "warranty": "6 meses"
+        }
+      },
+      "Producto (editar)": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 150,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripción"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precio",
+            "description": "En balboas (B/.)"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "sofa",
+                  "silla",
+                  "mesa",
+                  "cama",
+                  "lampara",
+                  "espejo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoría"
+          },
+          "material": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "madera",
+                  "tela",
+                  "metal",
+                  "vidrio"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "stock": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock",
+            "description": "Usar para reponer inventario"
+          },
+          "images": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imágenes"
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medidas"
+          },
+          "structure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estructura"
+          },
+          "warranty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Garantía"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activo",
+            "description": "Ponlo en falso para ocultarlo sin borrarlo"
+          }
+        },
+        "type": "object",
+        "title": "Producto (editar)",
+        "example": {
+          "price": 279.99,
+          "stock": 12
+        }
+      },
+      "Edición de perfil": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teléfono"
+          }
+        },
+        "type": "object",
+        "title": "Edición de perfil",
+        "example": {
+          "name": "Aldair Gallardo",
+          "phone": "6000-0000"
+        }
+      },
+      "Registro de cliente": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Nombre",
+            "description": "Nombre completo del cliente"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Correo electrónico",
+            "description": "Debe ser único en el sistema"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Contraseña",
+            "description": "Mínimo 8 caracteres"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teléfono",
+            "description": "Opcional, para contactar sobre el pedido"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "password"
+        ],
+        "title": "Registro de cliente",
+        "example": {
+          "email": "cliente@teca.com",
+          "name": "Aldair Gallardo",
+          "password": "MiClave123",
+          "phone": "6000-0000"
+        }
+      },
+      "Restablecer contraseña": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token de reseteo",
+            "description": "El token recibido por correo (válido 1 hora)"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Contraseña nueva",
+            "description": "Mínimo 8 caracteres"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "Restablecer contraseña"
+      },
+      "Solicitud de devolución": {
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "title": "Número de pedido",
+            "description": "Debe ser un pedido propio"
+          },
+          "product_id": {
+            "type": "string",
+            "title": "ID del producto",
+            "description": "Debe pertenecer a ese pedido"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 5,
+            "title": "Motivo",
+            "description": "Ej. «Producto dañado»"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_number",
+          "product_id",
+          "reason"
+        ],
+        "title": "Solicitud de devolución",
+        "example": {
+          "order_number": "TEC-2026-001",
+          "product_id": "6650f1a2b3c4d5e6f7a8b9c0",
+          "reason": "El producto llegó dañado en una esquina."
+        }
+      },
+      "Resolución de la devolución": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "en_revision",
+              "aprobado",
+              "rechazado",
+              "completado"
+            ],
+            "title": "Nuevo estado",
+            "description": "`en_revision`, `aprobado`, `rechazado` o `completado`"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Resolución de la devolución",
+        "example": {
+          "status": "aprobado"
+        }
+      },
+      "Reseña": {
+        "properties": {
+          "rating": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Calificación",
+            "description": "Estrellas, de 1 a 5"
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Comentario",
+            "description": "Máximo 500 caracteres"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rating",
+          "comment"
+        ],
+        "title": "Reseña",
+        "example": {
+          "comment": "El sofá llegó en perfecto estado y la entrega fue rápida.",
+          "rating": 5
+        }
+      },
+      "Dirección de envío": {
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "title": "Nombre de quien recibe"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Teléfono de contacto"
+          },
+          "province": {
+            "type": "string",
+            "title": "Provincia",
+            "description": "Ej. «Chiriquí»"
+          },
+          "city": {
+            "type": "string",
+            "title": "Ciudad o distrito",
+            "description": "Ej. «David»"
+          },
+          "address_line": {
+            "type": "string",
+            "title": "Dirección",
+            "description": "Calle, casa o edificio"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencia",
+            "description": "Punto de referencia para el repartidor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "full_name",
+          "phone",
+          "province",
+          "city",
+          "address_line"
+        ],
+        "title": "Dirección de envío"
+      },
+      "Detalle de validación": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Ubicación del campo"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Mensaje"
+          },
+          "type": {
+            "type": "string",
+            "title": "Tipo de error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "Detalle de validación"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Autenticación",
+      "description": "Registro de clientes, verificación de correo, inicio de sesión (JWT), recuperación y cambio de contraseña, y perfil propio.\n\n**Cómo autenticarse:** llama a `POST /auth/login`, copia el `access_token` y pulsa el botón **Authorize** de esta página para enviarlo como `Authorization: Bearer <token>` en el resto de peticiones."
+    },
+    {
+      "name": "Catálogo",
+      "description": "Endpoints **públicos** de la tienda: listado de productos con filtros (categoría, material, rango de precio), búsqueda por texto, ordenamiento y paginación; detalle del producto y reseñas."
+    },
+    {
+      "name": "Carrito",
+      "description": "Carrito persistente del cliente autenticado. Valida stock en cada operación y devuelve siempre el resumen del pedido (subtotal, envío, descuento, total y cuánto falta para el envío gratis).\n\nLos **invitados** manejan el carrito en el frontend y envían los items directamente a `POST /orders/checkout`."
+    },
+    {
+      "name": "Pedidos",
+      "description": "Checkout (con o sin cuenta), historial de pedidos y seguimiento del estado con línea de tiempo y número de guía."
+    },
+    {
+      "name": "Mi cuenta",
+      "description": "Datos guardados del cliente: direcciones de envío, métodos de pago (solo etiquetas, nunca números completos de tarjeta) y solicitudes de devolución."
+    },
+    {
+      "name": "Administración",
+      "description": "Panel interno. Cada endpoint exige uno de los roles internos: `admin`, `vendedor`, `encargado`, `soporte`, `editor`, `finanzas`. Las acciones administrativas quedan registradas en la auditoría."
+    },
+    {
+      "name": "Salud",
+      "description": "Verificación de que el servicio está en línea."
+    }
+  ]
+}
