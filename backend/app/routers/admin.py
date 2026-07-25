@@ -25,6 +25,7 @@ from ..security import (
     require_sales,
     require_staff,
 )
+from .uploads import eliminar_archivo
 
 router = APIRouter(prefix="/admin", tags=["Administración"])
 
@@ -270,13 +271,23 @@ async def update_product(
     actor: dict = Depends(require_product_editor),
 ):
     updates = data.model_dump(exclude_none=True)
+    oid = parse_object_id(product_id, "producto")
+
+    # Se guardan las imágenes actuales para borrar del disco las que se quiten
+    anterior = await get_db().products.find_one({"_id": oid}) if "images" in updates else None
+
     result = await get_db().products.find_one_and_update(
-        {"_id": parse_object_id(product_id, "producto")},
+        {"_id": oid},
         {"$set": updates},
         return_document=True,
     )
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Producto no encontrado")
+
+    if anterior:
+        for ruta in set(anterior.get("images") or []) - set(updates["images"]):
+            eliminar_archivo(ruta)
+
     await log_audit(actor, "editar", "producto", f"{result['name']}: {', '.join(updates)}")
     return serialize(result)
 
@@ -305,6 +316,11 @@ async def delete_product(
     )
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Producto no encontrado")
+
+    # Las imágenes del producto se borran del disco para no dejar archivos huérfanos
+    for ruta in result.get("images") or []:
+        eliminar_archivo(ruta)
+
     await log_audit(actor, "eliminar", "producto", result["name"])
 
 

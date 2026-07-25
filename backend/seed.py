@@ -5,9 +5,11 @@ Es idempotente: no duplica datos si ya existen.
 """
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
+import placeholders
 from app.config import get_settings
 from app.security import hash_password
 
@@ -24,6 +26,22 @@ PRODUCTS = [
 ]
 
 
+def imagen_de_ejemplo(categoria: str, upload_dir: str) -> str:
+    """Crea (si no existe) la imagen de ejemplo de una categoría y devuelve su ruta.
+
+    Es exactamente el mismo formato de ruta que genera la subida real de imágenes,
+    así el frontend no distingue entre una foto de ejemplo y una subida por el panel.
+    """
+    carpeta = Path(__file__).parent / upload_dir
+    carpeta.mkdir(parents=True, exist_ok=True)
+
+    archivo = carpeta / f"ejemplo-{categoria}.png"
+    if not archivo.exists():
+        placeholders.generar(categoria, archivo)
+
+    return f"/{upload_dir}/{archivo.name}"
+
+
 async def main() -> None:
     settings = get_settings()
     client = AsyncIOMotorClient(settings.mongo_uri)
@@ -33,11 +51,12 @@ async def main() -> None:
         exists = await db.products.find_one({"name": product["name"]})
         if exists:
             continue
+        imagen = imagen_de_ejemplo(product["category"], settings.upload_dir)
         await db.products.insert_one(
             product
             | {
                 "description": f"{product['name']} de alta calidad, fabricado con materiales duraderos.",
-                "images": [],
+                "images": [imagen],
                 "active": True,
                 "rating_avg": 0,
                 "rating_count": 0,

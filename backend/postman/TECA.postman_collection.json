@@ -1863,6 +1863,76 @@
       ]
     },
     {
+      "name": "Imágenes",
+      "description": "Subida de las imágenes de los productos. Los archivos se guardan en la carpeta static/products/ y en la base de datos solo se almacena la ruta (/static/products/a1b2c3.jpg).\n\nLas imágenes quedan disponibles en http://localhost:8000/static/products/<archivo>.",
+      "item": [
+        {
+          "name": "Subir imágenes de un producto",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/uploads/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "uploads",
+                "images"
+              ]
+            },
+            "description": "Sube una o varias imágenes y devuelve las rutas con las que se guardan.\n\nEste es el endpoint que usa el formulario *Nuevo producto*: primero se suben los archivos y después esas rutas se envían en el campo images de POST /admin/products.\n\nCómo enviarlo: con multipart/form-data, no con JSON. El campo debe llamarse files y puede repetirse para mandar varias imágenes a la vez.\n\nRespuesta:\n`json\n{\n  \"images\": [\"/static/products/a1b2c3.jpg\", \"/static/products/d4e5f6.png\"]\n}\n`\n\nEl frontend arma la dirección completa anteponiendo la URL de la API: http://localhost:8000/static/products/a1b2c3.jpg.\n\nValidaciones: solo .jpg, .jpeg, .png, .webp y .gif; se verifica que el contenido sea realmente una imagen; máximo 5 MB por archivo.\n\n🔒 Roles: admin, editor, encargado.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [],
+                  "description": "Una o varias imágenes del producto (puedes elegir varios archivos)"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar una imagen subida",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/uploads/images?path=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "uploads",
+                "images"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Borra del disco una imagen que ya no se usa. Se envía la ruta tal como la devolvió la subida:\n\n`\nDELETE /admin/uploads/images?path=/static/products/a1b2c3.jpg\n`\n\nÚtil cuando el usuario quita una imagen del formulario antes de guardar. Si el archivo ya no existe responde igual, sin error.\n\nAl eliminar un producto sus imágenes se borran solas, no hace falta llamar aquí.\n\n🔒 Roles: admin, editor, encargado."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Salud",
       "description": "Verificación de que el servicio está en línea.",
       "item": [

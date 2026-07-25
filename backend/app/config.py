@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     shipping_cost: float = 25.00           # costo de envío estándar (B/.)
     free_shipping_threshold: float = 300.00  # monto para envío gratis (B/.)
 
+    # Imágenes de productos
+    # Los archivos se guardan en disco y en la base de datos solo se guarda la ruta.
+    upload_dir: str = "static/products"    # carpeta relativa a backend/
+    max_image_mb: float = 5.0              # tamaño máximo por imagen
+    max_images_per_upload: int = 8         # archivos por petición
+
     # CORS: orígenes del frontend separados por coma
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 

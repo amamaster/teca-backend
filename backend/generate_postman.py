@@ -70,6 +70,38 @@ def resolver_ref(spec: dict, esquema: dict) -> dict:
     return spec.get("components", {}).get("schemas", {}).get(nombre, {})
 
 
+def cuerpo_de_archivos(spec: dict, operacion: dict) -> dict | None:
+    """Arma el cuerpo tipo formulario para los endpoints que reciben archivos.
+
+    Postman muestra un selector de archivo cuando el campo es de tipo `file`,
+    así se pueden elegir las imágenes desde el explorador.
+    """
+    contenido = operacion.get("requestBody", {}).get("content", {}).get("multipart/form-data")
+    if not contenido:
+        return None
+
+    esquema = resolver_ref(spec, contenido.get("schema", {}))
+    campos = []
+    for nombre, propiedad in esquema.get("properties", {}).items():
+        # Un arreglo de binarios significa "varios archivos"
+        es_lista = propiedad.get("type") == "array"
+        interno = propiedad.get("items", {}) if es_lista else propiedad
+        if interno.get("format") == "binary":
+            campos.append(
+                {
+                    "key": nombre,
+                    "type": "file",
+                    "src": [],
+                    "description": limpiar(propiedad.get("description", ""))
+                    + (" (puedes elegir varios archivos)" if es_lista else ""),
+                }
+            )
+        else:
+            campos.append({"key": nombre, "type": "text", "value": ""})
+
+    return {"mode": "formdata", "formdata": campos} if campos else None
+
+
 def ejemplo_de_cuerpo(spec: dict, operacion: dict) -> str | None:
     """Devuelve el JSON de ejemplo del cuerpo de la petición, si lo hay."""
     contenido = operacion.get("requestBody", {}).get("content", {}).get("application/json")
@@ -147,9 +179,13 @@ def construir_peticion(spec: dict, ruta: str, metodo: str, operacion: dict) -> d
         ("/admin", "/account", "/cart")
     )
 
+    archivos = cuerpo_de_archivos(spec, operacion)
+
     peticion: dict[str, Any] = {
         "method": metodo.upper(),
-        "header": [{"key": "Content-Type", "value": "application/json"}],
+        # En multipart no se fija Content-Type: Postman lo calcula solo,
+        # igual que hace el navegador con FormData
+        "header": [] if archivos else [{"key": "Content-Type", "value": "application/json"}],
         "url": construir_url(ruta, operacion.get("parameters", [])),
         "description": limpiar(operacion.get("description", "")),
     }
@@ -158,8 +194,9 @@ def construir_peticion(spec: dict, ruta: str, metodo: str, operacion: dict) -> d
     if not protegida:
         peticion["auth"] = {"type": "noauth"}
 
-    cuerpo = ejemplo_de_cuerpo(spec, operacion)
-    if cuerpo:
+    if archivos:
+        peticion["body"] = archivos
+    elif cuerpo := ejemplo_de_cuerpo(spec, operacion):
         peticion["body"] = {
             "mode": "raw",
             "raw": cuerpo,

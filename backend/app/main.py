@@ -10,9 +10,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
+from fastapi.staticfiles import StaticFiles
+
 from . import database
 from .config import get_settings
-from .routers import account, admin, auth, cart, orders, products
+from .routers import account, admin, auth, cart, orders, products, uploads
 
 
 @asynccontextmanager
@@ -73,6 +75,16 @@ TAGS_METADATA = [
             "Las acciones administrativas quedan registradas en la auditoría."
         ),
     },
+    {
+        "name": "Imágenes",
+        "description": (
+            "Subida de las imágenes de los productos. Los archivos se guardan en la "
+            "carpeta `static/products/` y en la base de datos solo se almacena **la "
+            "ruta** (`/static/products/a1b2c3.jpg`).\n\n"
+            "Las imágenes quedan disponibles en "
+            "`http://localhost:8000/static/products/<archivo>`."
+        ),
+    },
     {"name": "Salud", "description": "Verificación de que el servicio está en línea."},
 ]
 
@@ -131,6 +143,13 @@ app.include_router(cart.router)
 app.include_router(orders.router)
 app.include_router(account.router)
 app.include_router(admin.router)
+app.include_router(uploads.router)
+
+# Sirve las imágenes de los productos. La ruta que se guarda en la base de datos
+# (/static/products/xxx.jpg) es exactamente la que responde este montaje, así que
+# el frontend solo tiene que anteponerle la dirección de la API.
+_carpeta_imagenes = uploads.carpeta_destino().parent
+app.mount("/static", StaticFiles(directory=_carpeta_imagenes), name="static")
 
 
 # Los esquemas de error que genera FastAPI vienen en inglés; aquí se traducen.

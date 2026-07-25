@@ -2521,6 +2521,96 @@
         ]
       }
     },
+    "/admin/uploads/images": {
+      "post": {
+        "tags": [
+          "Imágenes"
+        ],
+        "summary": "Subir imágenes de un producto",
+        "description": "Sube una o varias imágenes y devuelve **las rutas** con las que se guardan.\n\nEste es el endpoint que usa el formulario *Nuevo producto*: primero se suben los archivos y después esas rutas se envían en el campo `images` de `POST /admin/products`.\n\n**Cómo enviarlo:** con `multipart/form-data`, no con JSON. El campo debe llamarse `files` y puede repetirse para mandar varias imágenes a la vez.\n\n**Respuesta:**\n```json\n{\n  \"images\": [\"/static/products/a1b2c3.jpg\", \"/static/products/d4e5f6.png\"]\n}\n```\n\nEl frontend arma la dirección completa anteponiendo la URL de la API: `http://localhost:8000/static/products/a1b2c3.jpg`.\n\n**Validaciones:** solo `.jpg`, `.jpeg`, `.png`, `.webp` y `.gif`; se verifica que el contenido sea realmente una imagen; máximo 5 MB por archivo.\n\n🔒 Roles: **admin**, **editor**, **encargado**.",
+        "operationId": "subir_imagenes_admin_uploads_images_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_subir_imagenes_admin_uploads_images_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Formato no permitido o el archivo no es una imagen"
+          },
+          "413": {
+            "description": "La imagen supera el tamaño máximo"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Imágenes"
+        ],
+        "summary": "Eliminar una imagen subida",
+        "description": "Borra del disco una imagen que ya no se usa. Se envía la ruta tal como la devolvió la subida:\n\n```\nDELETE /admin/uploads/images?path=/static/products/a1b2c3.jpg\n```\n\nÚtil cuando el usuario quita una imagen del formulario antes de guardar. Si el archivo ya no existe responde igual, sin error.\n\nAl eliminar un producto sus imágenes se borran solas, no hace falta llamar aquí.\n\n🔒 Roles: **admin**, **editor**, **encargado**.",
+        "operationId": "eliminar_imagen_admin_uploads_images_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error de validación"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/": {
       "get": {
         "tags": [
@@ -2602,6 +2692,24 @@
           "province": "Chiriquí",
           "reference": "Frente al parque"
         }
+      },
+      "Body_subir_imagenes_admin_uploads_images_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "Una o varias imágenes del producto"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_subir_imagenes_admin_uploads_images_post"
       },
       "Item del carrito": {
         "properties": {
@@ -3769,6 +3877,10 @@
     {
       "name": "Administración",
       "description": "Panel interno. Cada endpoint exige uno de los roles internos: `admin`, `vendedor`, `encargado`, `soporte`, `editor`, `finanzas`. Las acciones administrativas quedan registradas en la auditoría."
+    },
+    {
+      "name": "Imágenes",
+      "description": "Subida de las imágenes de los productos. Los archivos se guardan en la carpeta `static/products/` y en la base de datos solo se almacena **la ruta** (`/static/products/a1b2c3.jpg`).\n\nLas imágenes quedan disponibles en `http://localhost:8000/static/products/<archivo>`."
     },
     {
       "name": "Salud",

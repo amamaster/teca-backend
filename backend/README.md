@@ -306,6 +306,26 @@ Para usarlos:
 Ejemplo: marca `category` con valor `sofa,silla` y `sort` con `price_asc` para ver solo
 sofás y sillas ordenados de menor a mayor precio.
 
+### Subir una imagen desde Postman
+
+La petición *Subir imágenes de un producto* (carpeta **Imágenes**) usa
+`multipart/form-data`, así que se envía distinto a las demás:
+
+1. Abre la petición y ve a la pestaña **Body** (ya viene en modo `form-data`).
+2. En la fila `files` verás un botón **Select Files**. Pulsa y elige una o varias imágenes
+   de tu computadora.
+3. Pulsa **Send**. La respuesta trae las rutas:
+   ```json
+   { "images": ["/static/products/a1b2c3.jpg"] }
+   ```
+4. Copia esas rutas al campo `images` de *Crear un producto*.
+
+> No agregues el header `Content-Type` a mano en esta petición: Postman lo calcula solo
+> con el separador que necesita el formato. Si lo pones manualmente, fallará.
+
+Para comprobar que la imagen quedó guardada, ábrela en el navegador:
+`http://localhost:8000/static/products/a1b2c3.jpg`
+
 ### Probar como cliente en vez de como administrador
 
 El ejemplo del login trae las credenciales del administrador. Para probar el área del
@@ -587,7 +607,194 @@ async function finalizarCompra() {
 > el campo `email` siempre es obligatorio: es con lo que después podrá consultar su pedido
 > en `POST /orders/lookup`.
 
-### Paso 4 — Proteger rutas según el rol
+### Paso 4 — Subir las imágenes de un producto
+
+Las imágenes **se guardan como archivos** en `backend/static/products/` y en la base de
+datos solo se almacena **la ruta**. Nunca se guarda el archivo dentro de MongoDB.
+
+El formulario de creación de productos trabaja en **dos pasos**:
+
+```
+1. Se suben los archivos     →  POST /admin/uploads/images   (multipart/form-data)
+   El backend responde       →  { "images": ["/static/products/a1b2.jpg", ...] }
+
+2. Se crea el producto       →  POST /admin/products         (JSON)
+   enviando esas rutas       →  { "name": "...", "images": ["/static/products/a1b2.jpg"] }
+```
+
+Se hace así para que el usuario pueda **ver la vista previa** de las fotos antes de guardar
+el producto, y para poder quitar una imagen sin perder lo que ya escribió en el formulario.
+
+#### Función para subir imágenes
+
+Agrégala a tu `lib/api.js`:
+
+```javascript
+/**
+ * Sube una o varias imágenes y devuelve sus rutas.
+ * OJO: aquí NO se pone "Content-Type". El navegador lo pone solo,
+ * junto con el separador que necesita multipart/form-data.
+ */
+export async function subirImagenes(archivos) {
+  const datos = new FormData();
+  for (const archivo of archivos) {
+    datos.append("files", archivo); // el campo debe llamarse "files"
+  }
+
+  const respuesta = await fetch(`${API_URL}/admin/uploads/images`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: datos,
+  });
+
+  const resultado = await respuesta.json();
+  if (!respuesta.ok) throw new Error(resultado.detail);
+
+  return resultado.images; // ["/static/products/a1b2.jpg", ...]
+}
+
+/** Convierte la ruta guardada en la dirección completa de la imagen. */
+export function urlImagen(ruta) {
+  return ruta ? `${API_URL}${ruta}` : "/placeholder.png";
+}
+```
+
+#### Formulario de creación con vista previa
+
+```javascript
+"use client";
+import { useState } from "react";
+import { api, subirImagenes, urlImagen } from "@/lib/api";
+
+export default function NuevoProducto() {
+  const [imagenes, setImagenes] = useState([]); // rutas ya subidas
+  const [subiendo, setSubiendo] = useState(false);
+
+  async function manejarArchivos(evento) {
+    const archivos = Array.from(evento.target.files);
+    if (archivos.length === 0) return;
+
+    setSubiendo(true);
+    try {
+      const rutas = await subirImagenes(archivos);
+      setImagenes((previas) => [...previas, ...rutas]);
+    } catch (error) {
+      alert(error.message); // "Formato no permitido…" o "supera el máximo de 5 MB"
+    } finally {
+      setSubiendo(false);
+    }
+  }
+
+  function quitarImagen(ruta) {
+    setImagenes((previas) => previas.filter((r) => r !== ruta));
+    // Borra el archivo del servidor para no dejarlo huérfano
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/uploads/images?path=${ruta}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+    });
+  }
+
+  async function guardarProducto(evento) {
+    evento.preventDefault();
+    const formulario = new FormData(evento.target);
+
+    await api("/admin/products", {
+      method: "POST",
+      body: JSON.stringify({
+        name: formulario.get("name"),
+        price: Number(formulario.get("price")),
+        category: formulario.get("category"),
+        material: formulario.get("material"),
+        stock: Number(formulario.get("stock")),
+        images: imagenes, // las rutas que devolvió la subida
+      }),
+    });
+
+    alert("Producto creado");
+  }
+
+  return (
+    <form onSubmit={guardarProducto}>
+      <input name="name" placeholder="Nombre" required />
+      <input name="price" type="number" step="0.01" required />
+
+      <select name="category" required>
+        <option value="sofa">Sofá</option>
+        <option value="silla">Silla</option>
+        <option value="mesa">Mesa</option>
+        <option value="cama">Cama</option>
+        <option value="lampara">Lámpara</option>
+        <option value="espejo">Espejo</option>
+      </select>
+
+      <select name="material" required>
+        <option value="madera">Madera</option>
+        <option value="tela">Tela</option>
+        <option value="metal">Metal</option>
+        <option value="vidrio">Vidrio</option>
+      </select>
+
+      <input name="stock" type="number" defaultValue={0} />
+
+      {/* multiple = permite seleccionar varias fotos a la vez */}
+      <input type="file" accept="image/*" multiple onChange={manejarArchivos} />
+      {subiendo && <p>Subiendo imágenes...</p>}
+
+      {/* Vista previa de lo que ya se subió */}
+      <div style={{ display: "flex", gap: 8 }}>
+        {imagenes.map((ruta) => (
+          <div key={ruta}>
+            <img src={urlImagen(ruta)} alt="" width={80} height={80} />
+            <button type="button" onClick={() => quitarImagen(ruta)}>Quitar</button>
+          </div>
+        ))}
+      </div>
+
+      <button type="submit">Guardar producto</button>
+    </form>
+  );
+}
+```
+
+#### Mostrar las imágenes en el catálogo
+
+La base de datos guarda rutas como `/static/products/a1b2.jpg`, así que hay que
+anteponerles la dirección de la API:
+
+```javascript
+<img src={urlImagen(producto.images[0])} alt={producto.name} />
+```
+
+> **Si usas el componente `<Image>` de Next.js** en lugar de `<img>`, tienes que autorizar
+> el dominio del backend en `next.config.js`, o dará error:
+>
+> ```javascript
+> module.exports = {
+>   images: {
+>     remotePatterns: [
+>       { protocol: "http", hostname: "localhost", port: "8000", pathname: "/static/**" },
+>     ],
+>   },
+> };
+> ```
+
+#### Reglas de la subida
+
+| Regla | Valor | Qué pasa si no se cumple |
+|---|---|---|
+| Formatos aceptados | `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` | `400` Formato no permitido |
+| Tamaño máximo | 5 MB por imagen | `413` Supera el máximo |
+| Imágenes por petición | 8 | `400` Máximo 8 imágenes por vez |
+| Rol necesario | admin, editor o encargado | `403` No tienes permisos |
+
+El backend además **verifica el contenido** del archivo, no solo la extensión: si alguien
+renombra un `.exe` a `.png`, lo rechaza igual.
+
+> 🧹 **No quedan archivos basura.** Si eliminas un producto, sus imágenes se borran del
+> disco automáticamente. Si editas un producto y quitas una imagen de la lista, esa también
+> se borra. No tienes que hacer limpieza a mano.
+
+### Paso 5 — Proteger rutas según el rol
 
 ```javascript
 "use client";
@@ -719,6 +926,16 @@ export function useUsuario() {
 | GET | `/admin/dashboard` | interno | Métricas del panel |
 | GET | `/admin/finance/summary` | admin, finanzas | Ingresos por mes y método de pago |
 
+### Imágenes — `/admin/uploads` 🔒
+
+| Método | Ruta | Rol necesario | Descripción |
+|---|---|---|---|
+| POST | `/admin/uploads/images` | admin, editor, encargado | Subir imágenes (`multipart/form-data`, campo `files`) |
+| DELETE | `/admin/uploads/images?path=…` | admin, editor, encargado | Borrar una imagen del disco |
+
+Las imágenes subidas quedan disponibles públicamente en
+`http://localhost:8000/static/products/<archivo>`.
+
 ---
 
 ## 7. Reglas de negocio importantes
@@ -761,11 +978,15 @@ backend/
 │       ├── cart.py      # Carrito y cupones
 │       ├── orders.py    # Checkout y seguimiento de pedidos
 │       ├── account.py   # Direcciones, métodos de pago, devoluciones
-│       └── admin.py     # Panel de administración
+│       ├── admin.py     # Panel de administración
+│       └── uploads.py   # Subida de imágenes de productos
+├── static/
+│   └── products/        # Aquí se guardan las imágenes (no se sube a Git)
 ├── postman/
 │   ├── TECA.postman_collection.json    # Las 52 peticiones listas para importar
 │   └── TECA.postman_environment.json   # Variables (baseUrl, token, ids)
 ├── seed.py              # Carga datos de ejemplo
+├── placeholders.py      # Genera las imágenes de ejemplo del seed
 ├── export_openapi.py    # Exporta la documentación a openapi.json
 ├── generate_postman.py  # Regenera la colección de Postman
 ├── requirements.txt     # Dependencias de Python
@@ -788,6 +1009,10 @@ backend/
 | `coupons` | Cupones de descuento |
 | `audit_log` | Registro de acciones administrativas |
 | `counters` | Contadores para los números de pedido y devolución |
+
+> Las **imágenes no se guardan en MongoDB**: los archivos van a `backend/static/products/`
+> y en el campo `images` del producto solo queda la ruta
+> (`["/static/products/a1b2c3.jpg"]`).
 
 ---
 

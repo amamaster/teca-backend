@@ -4,6 +4,11 @@
 *.env
 !.env.example
 
+# Imágenes subidas desde el panel: son datos, no código.
+# Las de ejemplo las vuelve a crear `python seed.py`.
+backend/static/products/*
+!backend/static/products/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]
